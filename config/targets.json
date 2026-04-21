@@ -1,0 +1,36 @@
+{
+  "_comment": "Hardcoded allowlist. Only repos in this list can be analyzed. NEVER run against live services — only cloned code.",
+  "authorized_targets": [
+    {
+      "name": "pyyaml-old",
+      "repo": "https://github.com/yaml/pyyaml.git",
+      "ref": "3.12",
+      "known_cve": "CVE-2017-18342",
+      "category": "benchmark",
+      "notes": "Deserialization RCE via yaml.load — used to validate Analyst agent"
+    },
+    {
+      "name": "juice-shop",
+      "repo": "https://github.com/juice-shop/juice-shop.git",
+      "ref": "master",
+      "known_cve": null,
+      "category": "training",
+      "notes": "OWASP intentionally vulnerable app"
+    },
+    {
+      "name": "dvwa",
+      "repo": "https://github.com/digininja/DVWA.git",
+      "ref": "master",
+      "known_cve": null,
+      "category": "training",
+      "notes": "Damn Vulnerable Web Application"
+    }
+  ],
+  "bounty_programs": [
+    {
+      "name": "huntr.dev",
+      "url": "https://huntr.dev",
+      "scope": "OSS packages on npm, PyPI, etc."
+    }
+  ]
+}
