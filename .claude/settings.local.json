@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(pip --version)",
-      "Bash(python3 -m py_compile src/main.py src/models/router.py src/agents/base.py src/agents/recon.py)",
-      "Bash(python3 -m py_compile src/main.py src/orchestrator.py src/models/router.py src/agents/base.py src/agents/recon.py src/agents/analyst.py src/agents/exploit.py src/agents/patch.py src/agents/report.py src/sandbox/docker_runner.py src/store/findings.py src/store/audit.py)"
-    ]
-  }
-}

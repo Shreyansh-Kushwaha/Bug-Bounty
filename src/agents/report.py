@@ -30,11 +30,29 @@ class Report(BaseModel):
     severity: str
     summary: str
     steps_to_reproduce: list[str]
-    proof_of_concept: str
-    impact: str
-    remediation: str
+    proof_of_concept: str = ""
+    impact: str = ""
+    remediation: str = ""
     references: list[str] = Field(default_factory=list)
-    markdown: str = Field(description="Full report formatted as markdown")
+    markdown: str = ""
+
+    def model_post_init(self, __context: object) -> None:
+        if not self.markdown:
+            steps = "\n".join(f"{i+1}. {s}" for i, s in enumerate(self.steps_to_reproduce))
+            refs = "\n".join(f"- {r}" for r in self.references) if self.references else "N/A"
+            self.markdown = (
+                f"# {self.title}\n\n"
+                f"**Target:** {self.target}  \n"
+                f"**Severity:** {self.severity} (CVSS {self.cvss_score})  \n"
+                f"**CWE:** {self.cwe}  \n"
+                f"**CVSS Vector:** `{self.cvss_vector}`\n\n"
+                f"## Summary\n\n{self.summary}\n\n"
+                f"## Steps to Reproduce\n\n{steps}\n\n"
+                f"## Proof of Concept\n\n```\n{self.proof_of_concept}\n```\n\n"
+                f"## Impact\n\n{self.impact}\n\n"
+                f"## Remediation\n\n{self.remediation}\n\n"
+                f"## References\n\n{refs}\n"
+            )
 
 
 class ReportAgent(Agent[ReportInput, Report]):
@@ -66,8 +84,8 @@ Vulnerability:
   description: {h.description}
   severity hint: {h.severity}, exploitability hint: {h.exploitability}
 
-PoC (validated={inp.exploit.validated}):
-{inp.exploit.poc.code[:2500]}
+PoC summary (validated={inp.exploit.validated}):
+{inp.exploit.poc.code[:800]}
 
 Reproduction steps from exploit agent:
 {inp.exploit.poc.reproduction_steps}
@@ -87,8 +105,7 @@ Produce JSON:
   "proof_of_concept": "the PoC code or command",
   "impact": "what an attacker gains",
   "remediation": "how to fix",
-  "references": ["CWE URL", "related CVE if any"],
-  "markdown": "the full report formatted as markdown using all the fields above"
+  "references": ["CWE URL", "related CVE if any"]
 }}
 """
 

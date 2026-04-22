@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Run {{ run_id }}{% endblock %}
+{% block content %}
+<section class="card">
+    <h1>Run <code>{{ run_id }}</code></h1>
+    <div class="meta">
+        <div><strong>Target:</strong> {{ status.target }}</div>
+        {% if status.repo %}<div><strong>Repo:</strong> <code>{{ status.repo }}</code></div>{% endif %}
+        <div><strong>Started:</strong> {{ status.started_at | iso_utc }}</div>
+        {% if status.stop_after %}<div><strong>Stop after:</strong> {{ status.stop_after }}</div>{% endif %}
+    </div>
+    <div id="live"
+         hx-get="/runs/{{ run_id }}/status"
+         hx-trigger="load, every 2s"
+         hx-swap="innerHTML">
+        {% include "_run_status.html" %}
+    </div>
+</section>
+{% endblock %}

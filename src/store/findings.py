@@ -34,7 +34,11 @@ CREATE INDEX IF NOT EXISTS idx_findings_run ON findings(run_id);
 class FindingsStore:
     def __init__(self, db_path: Path):
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(db_path)
+        # check_same_thread=False so the store can be created in one thread
+        # (e.g. the web request handler) and written from another (the worker).
+        # Safe because sqlite3 itself is threadsafe at the connection level for
+        # our sequential usage pattern.
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.executescript(SCHEMA)
         self.conn.commit()
 

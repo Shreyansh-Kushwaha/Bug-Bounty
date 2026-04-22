@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}New run — Bug-Bounty Pipeline{% endblock %}
+{% block content %}
+<section class="card">
+    <h1>Start a new run</h1>
+    <form action="/runs" method="post" class="run-form">
+        <label>
+            <span>Repository URL</span>
+            <input type="url" name="repo_url" placeholder="https://github.com/you/your-repo.git" required>
+        </label>
+        <div class="row">
+            <label class="grow">
+                <span>Ref (branch / tag / commit)</span>
+                <input type="text" name="ref" value="main">
+            </label>
+            <label class="grow">
+                <span>Stop after</span>
+                <select name="stop_after">
+                    <option value="" selected>Full pipeline (Recon → Report)</option>
+                    <option value="recon">Recon only</option>
+                    <option value="analyst">Analyst (stop before exploit)</option>
+                    <option value="exploit">Exploit</option>
+                    <option value="patch">Patch</option>
+                </select>
+            </label>
+        </div>
+        <label>
+            <span>Your name / handle (for audit)</span>
+            <input type="text" name="attested_by" placeholder="e.g. shreyansh">
+        </label>
+        <label>
+            <span>Notes (optional)</span>
+            <input type="text" name="notes" placeholder="e.g. 'personal side project'">
+        </label>
+        <label class="attestation">
+            <input type="checkbox" name="attested" value="yes" required>
+            <span>I confirm I own this repository, or I have written permission from the owner to test it for security issues. This statement will be recorded in the audit log.</span>
+        </label>
+        <label class="auto-approve">
+            <input type="checkbox" name="auto_approve" value="yes">
+            <span>Auto-approve all human gates (skips Approve/Abort prompts before Exploit and Patch stages). Only for testing.</span>
+        </label>
+        <button type="submit">Start run</button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Recent runs</h2>
+    {% if runs %}
+    <table class="runs">
+        <thead>
+            <tr><th>Run</th><th>Target</th><th>Stage</th><th>Started</th><th>Finished</th></tr>
+        </thead>
+        <tbody>
+            {% for r in runs %}
+            <tr>
+                <td><a href="/runs/{{ r.run_id }}">{{ r.run_id }}</a></td>
+                <td>{{ r.target }}</td>
+                <td><span class="stage stage-{{ r.current_stage }}">{{ r.current_stage }}</span></td>
+                <td>{{ r.started_at | iso_utc }}</td>
+                <td>{% if r.finished_at %}{{ r.finished_at | iso_utc }}{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="dim">No runs yet.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Authorized targets</h2>
+    <table class="targets">
+        <thead><tr><th>Name</th><th>Repo</th><th>Ref</th><th>Category</th><th>Notes</th></tr></thead>
+        <tbody>
+            {% for t in targets %}
+            <tr>
+                <td>{{ t.name }}</td>
+                <td><code>{{ t.repo }}</code></td>
+                <td>{{ t.ref }}</td>
+                <td>{{ t.category }}</td>
+                <td class="dim">{{ t.notes or "" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

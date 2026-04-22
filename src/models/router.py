@@ -49,9 +49,15 @@ class GeminiProvider(_Provider):
     name = "gemini"
 
     MODELS = {
-        Tier.REASONING: "gemini-2.5-pro",
-        Tier.FAST: "gemini-2.0-flash",
-        Tier.CODER: "gemini-2.5-pro",
+        Tier.REASONING: "gemini-3-flash-preview",
+        Tier.FAST: "gemini-3-flash-preview",
+        Tier.CODER: "gemini-3-flash-preview",
+    }
+    # Ordered fallback list per tier — tried in sequence on 503/429
+    FALLBACK_MODELS: dict[Tier, list[str]] = {
+        Tier.REASONING: ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
+        Tier.FAST: ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
+        Tier.CODER: ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
     }
 
     def __init__(self):
@@ -63,17 +69,31 @@ class GeminiProvider(_Provider):
 
     def _get_client(self):
         if self._client is None:
-            import google.generativeai as genai
-            genai.configure(api_key=self.key)
-            self._client = genai
+            from google import genai
+            self._client = genai.Client(api_key=self.key)
         return self._client
 
     def call(self, prompt: str, system: str | None, tier: Tier) -> LLMResponse:
-        genai = self._get_client()
-        model_name = self.MODELS[tier]
-        model = genai.GenerativeModel(model_name, system_instruction=system)
-        resp = model.generate_content(prompt)
-        return LLMResponse(text=resp.text, provider=self.name, model=model_name)
+        client = self._get_client()
+        from google.genai import types
+        config = types.GenerateContentConfig(system_instruction=system) if system else None
+        candidates = [self.MODELS[tier]] + self.FALLBACK_MODELS.get(tier, [])
+        last_err: Exception | None = None
+        for model_name in candidates:
+            try:
+                resp = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=config,
+                )
+                return LLMResponse(text=resp.text, provider=self.name, model=model_name)
+            except Exception as e:
+                msg = str(e).lower()
+                if any(k in msg for k in ("503", "unavailable", "overloaded", "high demand", "quota", "429", "resource_exhausted")):
+                    last_err = e
+                    continue
+                raise
+        raise last_err
 
 
 class GroqProvider(_Provider):
@@ -185,7 +205,7 @@ class ModelRouter:
         prompt: str,
         system: str | None = None,
         tier: Tier = Tier.REASONING,
-        max_retries_per_provider: int = 2,
+        max_retries_per_provider: int = 3,
     ) -> LLMResponse:
         errors: list[tuple[str, Exception]] = []
         for provider in self._active:
@@ -195,8 +215,8 @@ class ModelRouter:
                 except Exception as e:  # noqa: BLE001 — intentionally broad for failover
                     errors.append((provider.name, e))
                     msg = str(e).lower()
-                    if any(k in msg for k in ("rate", "quota", "429")):
-                        time.sleep(2 ** attempt)
+                    if any(k in msg for k in ("rate", "quota", "429", "503", "unavailable", "overloaded")):
+                        time.sleep(5 * (2 ** attempt))
                         continue
                     break
         raise AllProvidersExhausted(

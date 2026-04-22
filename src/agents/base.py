@@ -61,9 +61,17 @@ class Agent(ABC, Generic[TInput, TOutput]):
         payload = fence.group(1).strip() if fence else text.strip()
         start = payload.find("{")
         end = payload.rfind("}")
-        if start == -1 or end == -1:
+        if start == -1:
             raise ValueError(f"No JSON object found in response: {text[:500]}")
-        return json.loads(payload[start : end + 1])
+        raw = payload[start : end + 1] if end != -1 else payload[start:]
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            try:
+                from json_repair import repair_json
+                return json.loads(repair_json(raw))
+            except Exception:
+                raise ValueError(f"Could not parse JSON from response: {text[:500]}")
 
 
 def save_artifact(name: str, data: dict, out_dir: Path) -> Path:

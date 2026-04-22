@@ -1,5 +1,5 @@
 {
-  "_comment": "Hardcoded allowlist. Only repos in this list can be analyzed. NEVER run against live services — only cloned code.",
+  "_comment": "Hardcoded allowlist. Only repos in this list can be analyzed. NEVER run against live services \u2014 only cloned code.",
   "authorized_targets": [
     {
       "name": "pyyaml-old",
@@ -7,7 +7,7 @@
       "ref": "3.12",
       "known_cve": "CVE-2017-18342",
       "category": "benchmark",
-      "notes": "Deserialization RCE via yaml.load — used to validate Analyst agent"
+      "notes": "Deserialization RCE via yaml.load \u2014 used to validate Analyst agent"
     },
     {
       "name": "juice-shop",
@@ -24,6 +24,22 @@
       "known_cve": null,
       "category": "training",
       "notes": "Damn Vulnerable Web Application"
+    },
+    {
+      "name": "typocalypse",
+      "repo": "https://github.com/Shreyansh-Kushwaha/Typocalypse.git",
+      "ref": "main",
+      "known_cve": null,
+      "category": "own-project",
+      "notes": "User's own repo \u2014 authorized by owner 2026-04-22"
+    },
+    {
+      "name": "vendorverse",
+      "repo": "https://github.com/Shreyansh-Kushwaha/VendorVerse.git",
+      "ref": "main",
+      "known_cve": null,
+      "category": "attested",
+      "notes": "Attested by Shreyansh at 2026-04-22 16:58:37 UTC. personal E-comercse websie"
     }
   ],
   "bounty_programs": [

@@ -20,6 +20,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from rich.console import Console
 
@@ -34,6 +35,12 @@ from src.store.findings import FindingsStore
 console = Console()
 
 
+# Gate callback: receives (gate_name, prompt), returns True to approve, False to abort.
+# Used by the web UI to bridge HITL confirmations. CLI leaves this None and falls
+# back to stdin.
+GateCallback = Callable[[str, str], bool]
+
+
 @dataclass
 class RunContext:
     run_id: str
@@ -43,6 +50,7 @@ class RunContext:
     audit: AuditLog
     store: FindingsStore
     auto_approve: bool = False
+    gate_callback: GateCallback | None = None
     recon: ReconOutput | None = None
     analyst: AnalystOutput | None = None
     exploits: dict[str, ExploitOutput] = field(default_factory=dict)
@@ -56,12 +64,24 @@ def _write(ctx: RunContext, name: str, data: dict) -> Path:
     return path
 
 
-def _confirm(prompt: str, auto: bool) -> bool:
-    if auto:
+def _confirm(ctx: "RunContext", gate_name: str, prompt: str) -> bool:
+    if ctx.auto_approve:
         console.print(f"[yellow]auto-approve[/] {prompt}")
+        ctx.audit.append("gate.auto_approve", {"gate": gate_name, "prompt": prompt})
         return True
+    if ctx.gate_callback is not None:
+        console.print(f"[cyan]awaiting human gate[/] {gate_name}: {prompt}")
+        ctx.audit.append("gate.pending", {"gate": gate_name, "prompt": prompt})
+        decision = ctx.gate_callback(gate_name, prompt)
+        ctx.audit.append(
+            "gate.decided",
+            {"gate": gate_name, "approved": bool(decision)},
+        )
+        return bool(decision)
     ans = input(f"{prompt} [y/N] ").strip().lower()
-    return ans in ("y", "yes")
+    approved = ans in ("y", "yes")
+    ctx.audit.append("gate.decided", {"gate": gate_name, "approved": approved})
+    return approved
 
 
 def _read_source_for(clone_dir: Path, file_rel: str, budget: int = 6000) -> str:
@@ -81,6 +101,7 @@ def new_run_context(
     audit_path: Path,
     db_path: Path,
     auto_approve: bool = False,
+    gate_callback: GateCallback | None = None,
 ) -> RunContext:
     run_id = f"{target['name']}_{int(time.time())}"
     artifact_dir = findings_dir / run_id
@@ -93,6 +114,7 @@ def new_run_context(
         audit=AuditLog(audit_path),
         store=FindingsStore(db_path),
         auto_approve=auto_approve,
+        gate_callback=gate_callback,
     )
 
 
@@ -131,8 +153,8 @@ def run_pipeline(ctx: RunContext, stop_after: str | None = None) -> None:
         return
 
     if not _confirm(
-        f"Proceed to write PoCs for top hypothesis (rank=1)?",
-        ctx.auto_approve,
+        ctx, "exploit",
+        "Proceed to write PoCs for top hypothesis (rank=1)?",
     ):
         console.print("[yellow]Aborted by user at Exploit gate.[/]")
         ctx.audit.append("gate.abort", {"stage": "exploit"})
@@ -158,11 +180,17 @@ def run_pipeline(ctx: RunContext, stop_after: str | None = None) -> None:
         return
 
     if not exploit_out.validated:
-        console.print("[yellow]PoC did not validate. Skipping patch and report.[/]")
-        _record_finding(ctx, top, exploit_out, None, None)
-        return
+        docker_missing = "docker not available" in (exploit_out.validation_reason or "").lower()
+        if not docker_missing:
+            console.print("[yellow]PoC did not validate. Skipping patch and report.[/]")
+            _record_finding(ctx, top, exploit_out, None, None)
+            return
+        console.print(
+            "[yellow]Docker unavailable — PoC generated but not executed. "
+            "Continuing to patch/report.[/]"
+        )
 
-    if not _confirm("PoC validated. Generate patch + report?", ctx.auto_approve):
+    if not _confirm(ctx, "patch_report", "Generate patch + report?"):
         console.print("[yellow]Aborted by user at Patch gate.[/]")
         ctx.audit.append("gate.abort", {"stage": "patch"})
         _record_finding(ctx, top, exploit_out, None, None)

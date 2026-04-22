@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+<section class="card">
+    <h1>Audit log</h1>
+    <p>
+        Chain status:
+        {% if chain_ok %}
+            <strong class="ok">intact</strong>
+        {% else %}
+            <strong class="bad">BROKEN at line {{ broken_line }}</strong>
+        {% endif %}
+        · {{ total }} entries · showing most recent 200.
+    </p>
+    <table class="audit">
+        <thead><tr><th>When</th><th>Event</th><th>Payload</th></tr></thead>
+        <tbody>
+            {% for e in entries %}
+            <tr>
+                <td>{{ e.ts | iso_utc }}</td>
+                <td><code>{{ e.event }}</code></td>
+                <td><pre>{{ e.payload | tojson(indent=2) }}</pre></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
