@@ -1,6 +1,6 @@
 # Bug-Bounty Pipeline — React frontend
 
-Vite + React 18 + TypeScript + Tailwind v4 + React Router + lucide-react.
+Vite + React 18 + TypeScript + Tailwind v3 + React Router + lucide-react.
 
 ## Layout
 
@@ -12,7 +12,7 @@ frontend/
 ├── src/
 │   ├── main.tsx          # BrowserRouter mounted at /app
 │   ├── App.tsx           # Route definitions
-│   ├── index.css         # Tailwind v4 + design tokens (light/dark)
+│   ├── index.css         # Tailwind v3 + design tokens (light/dark)
 │   ├── lib/api.ts        # Typed JSON client
 │   ├── hooks/
 │   │   ├── useTheme.ts   # localStorage-persisted light/dark
@@ -74,7 +74,11 @@ The React app talks to these JSON endpoints (added in `src/web/app.py`):
 `index.css`. `useTheme` persists the choice to `localStorage` and a tiny
 inline script in `index.html` applies it before paint to avoid a flash.
 
-## Notes on Tailwind v4
+## Notes on Tailwind v3
 
-We use the CSS-first config (`@theme { ... }` in `index.css`). No
-`tailwind.config.js`. The Vite plugin `@tailwindcss/vite` does the build.
+Standard v3 setup: `@tailwind base/components/utilities` directives in
+`index.css`, `tailwind.config.js` for the design tokens (named colors that
+resolve to CSS variables, so theming stays runtime), and `postcss.config.js`
+wiring `tailwindcss` + `autoprefixer`. Light/dark switch is via the
+`darkMode: ["selector", '[data-theme="dark"]']` config — no `dark:` class
+soup, just CSS variables that re-bind under `[data-theme="dark"]`.
