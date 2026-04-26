@@ -31,6 +31,29 @@ export default {
           "Consolas",
           "monospace",
         ],
+        script: ["Caveat", "cursive"],
+      },
+      animation: {
+        float: "orb-float 20s ease-in-out infinite",
+        "float-slow": "orb-float 28s ease-in-out infinite",
+        "float-slower": "orb-float 34s ease-in-out infinite",
+        blink: "caret-blink 1s steps(1) infinite",
+        "fade-up": "fade-up 0.6s ease-out both",
+      },
+      keyframes: {
+        "orb-float": {
+          "0%,100%": { transform: "translate(0,0) scale(1)" },
+          "33%":     { transform: "translate(60px,-40px) scale(1.1)" },
+          "66%":     { transform: "translate(-50px,50px) scale(0.92)" },
+        },
+        "caret-blink": {
+          "0%,50%": { opacity: "1" },
+          "51%,100%": { opacity: "0" },
+        },
+        "fade-up": {
+          "0%":   { opacity: "0", transform: "translateY(12px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
       },
       colors: {
         bg:           "var(--bg)",

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { NavLink, Link } from "react-router-dom";
-import { Menu, Moon, Shield, Sun, X } from "lucide-react";
-import { useTheme } from "../hooks/useTheme";
+import { Menu, Shield, X } from "lucide-react";
+import ThemeToggle from "./ThemeToggle";
 
 const links = [
   { to: "/", label: "Home", end: true },
@@ -14,7 +14,6 @@ const links = [
 ];
 
 export default function Navbar() {
-  const { theme, toggle } = useTheme();
   const [open, setOpen] = useState(false);
 
   return (
@@ -45,15 +44,7 @@ export default function Navbar() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={toggle}
-            aria-label="Toggle theme"
-            title={theme === "dark" ? "Switch to light" : "Switch to dark"}
-            className="grid place-items-center w-9 h-9 rounded-lg border border-border text-fg-muted
-                       transition-colors duration-150 hover:bg-bg-soft hover:text-fg"
-          >
-            {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
+          <ThemeToggle />
           <button
             onClick={() => setOpen((o) => !o)}
             aria-label="Toggle menu"
