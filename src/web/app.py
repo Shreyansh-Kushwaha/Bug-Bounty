@@ -57,6 +57,11 @@ if FRONTEND_DIST.exists():
     if assets_dir.exists():
         app.mount("/app/assets", StaticFiles(directory=str(assets_dir)), name="app-assets")
 
+
+# Serve top-level static files from frontend/dist (favicon, robots, etc.)
+# These sit at /app/<file>, not /app/assets/<file>, so they need explicit handling.
+_TOP_STATIC = {"favicon.svg", "favicon.ico", "robots.txt"}
+
 manager = RunManager(
     repos_dir=REPOS_DIR,
     findings_dir=FINDINGS_DIR,
@@ -221,7 +226,13 @@ def api_health():
 def serve_spa(full_path: str = ""):
     if not FRONTEND_DIST.exists():
         raise HTTPException(404, "React build not present. Run `npm run build` in frontend/.")
-    # Real asset paths are handled by the /app/assets mount above; everything
+    # Top-level static files (favicon etc.) live at /app/<file>.
+    if full_path in _TOP_STATIC:
+        target = FRONTEND_DIST / full_path
+        if target.is_file():
+            from fastapi.responses import FileResponse
+            return FileResponse(str(target))
+    # Real /assets/* paths are handled by the StaticFiles mount above; everything
     # else is a React Router route — return index.html.
     index = FRONTEND_DIST / "index.html"
     return HTMLResponse(index.read_text())
