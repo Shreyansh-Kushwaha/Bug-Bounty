@@ -6,8 +6,6 @@ The backend only exposes:
   - Static assets at /app/assets/*
   - SPA fallback at /app, /app/, /app/<anything> → index.html
   - Bare-path redirects (/, /dashboard, /findings, …) → /app/<corresponding>
-
-The old Jinja UI has been retired; templates remain on disk but are unused.
 """
 
 from __future__ import annotations
