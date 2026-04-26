@@ -1,26 +1,143 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Automated bug-bounty pipeline — recon, analyst, exploit, patch, and report. Built for authorized security research.">
     <title>{% block title %}Bug-Bounty Pipeline{% endblock %}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://unpkg.com/htmx.org@2.0.3" integrity="sha384-0895/pl2MU10Hqc6jd4RvrthNlDiE9U1tWmX7WRESftEDRosgxNsQG/Ze9YMRzHq" crossorigin="anonymous"></script>
+
+    <script>
+        // Apply theme before paint to avoid flash
+        (function () {
+            try {
+                var saved = localStorage.getItem("theme");
+                var prefers = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+                var theme = saved || (prefers ? "dark" : "light");
+                document.documentElement.setAttribute("data-theme", theme);
+            } catch (e) {}
+        })();
+    </script>
 </head>
 <body>
     <header class="topbar">
-        <div class="brand"><a href="/">Bug-Bounty Pipeline</a></div>
-        <nav>
-            <a href="/">Home</a>
-            <a href="/findings">Findings</a>
-            <a href="/audit">Audit log</a>
-        </nav>
+        <div class="nav-inner">
+            <div class="brand">
+                <a href="/" aria-label="Bug-Bounty Pipeline home">
+                    <span class="brand-mark" aria-hidden="true">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+                    </span>
+                    <span>Bug-Bounty</span>
+                </a>
+            </div>
+
+            <nav>
+                <ul class="nav-links" id="nav-links">
+                    <li><a href="/"          {% if active_page == "home" %}class="active"{% endif %}>Home</a></li>
+                    <li><a href="/features"  {% if active_page == "features" %}class="active"{% endif %}>Features</a></li>
+                    <li><a href="/dashboard" {% if active_page == "dashboard" %}class="active"{% endif %}>Dashboard</a></li>
+                    <li><a href="/findings"  {% if active_page == "findings" %}class="active"{% endif %}>Findings</a></li>
+                    <li><a href="/audit"     {% if active_page == "audit" %}class="active"{% endif %}>Audit</a></li>
+                    <li><a href="/about"     {% if active_page == "about" %}class="active"{% endif %}>About</a></li>
+                    <li><a href="/contact"   {% if active_page == "contact" %}class="active"{% endif %}>Contact</a></li>
+                </ul>
+            </nav>
+
+            <div class="nav-actions">
+                <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle theme" title="Toggle theme">
+                    <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                    <svg class="theme-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                </button>
+                <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle menu" aria-expanded="false">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6"  x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+            </div>
+        </div>
     </header>
+
     <main>
         {% block content %}{% endblock %}
     </main>
+
     <footer>
-        <small>Runs are scoped to the authorized allowlist. Submitting a new repo records an attestation.</small>
+        <div class="footer-inner">
+            <div class="footer-col">
+                <div class="brand" style="margin-bottom: 0.75rem;">
+                    <span class="brand-mark" aria-hidden="true">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+                    </span>
+                    <span style="color: var(--fg);">Bug-Bounty Pipeline</span>
+                </div>
+                <p style="margin: 0; max-width: 320px;">An AI-driven security research platform for authorized open-source repositories. Recon → Patch in five stages.</p>
+            </div>
+            <div class="footer-col">
+                <h4>Product</h4>
+                <ul>
+                    <li><a href="/features">Features</a></li>
+                    <li><a href="/dashboard">Dashboard</a></li>
+                    <li><a href="/findings">Findings</a></li>
+                    <li><a href="/audit">Audit log</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4>Resources</h4>
+                <ul>
+                    <li><a href="/about">About</a></li>
+                    <li><a href="https://github.com/" rel="noopener">GitHub</a></li>
+                    <li><a href="/contact">Contact</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4>Safety</h4>
+                <ul>
+                    <li>Allowlist-only targeting</li>
+                    <li>Non-destructive PoCs</li>
+                    <li>No auto-submission</li>
+                    <li>Hash-chained audit log</li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <span>&copy; <span id="year"></span> Bug-Bounty Pipeline. Runs are scoped to the authorized allowlist.</span>
+            <span>Built with FastAPI · Gemini · htmx</span>
+        </div>
     </footer>
+
+    <script>
+        // Theme toggle
+        (function () {
+            var btn = document.getElementById("theme-toggle");
+            if (!btn) return;
+            btn.addEventListener("click", function () {
+                var current = document.documentElement.getAttribute("data-theme") || "dark";
+                var next = current === "dark" ? "light" : "dark";
+                document.documentElement.setAttribute("data-theme", next);
+                try { localStorage.setItem("theme", next); } catch (e) {}
+            });
+        })();
+
+        // Mobile menu
+        (function () {
+            var btn = document.getElementById("menu-toggle");
+            var nav = document.getElementById("nav-links");
+            if (!btn || !nav) return;
+            btn.addEventListener("click", function () {
+                var open = nav.classList.toggle("open");
+                btn.setAttribute("aria-expanded", open ? "true" : "false");
+            });
+        })();
+
+        // Year
+        (function () {
+            var el = document.getElementById("year");
+            if (el) el.textContent = new Date().getFullYear();
+        })();
+    </script>
 </body>
 </html>

@@ -1,0 +1,8 @@
+node_modules
+dist
+*.tsbuildinfo
+.vite
+.DS_Store
+# tsc composite emit artifacts (we run vite directly, no need to track these)
+vite.config.js
+vite.config.d.ts

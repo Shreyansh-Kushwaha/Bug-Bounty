@@ -1,18 +1,13 @@
-"""FastAPI web UI for the bug-bounty pipeline.
+"""FastAPI backend for the bug-bounty pipeline.
 
-Routes:
-  GET  /                         — home (new-run form + recent runs + targets)
-  POST /runs                     — create & start a run (attestation required)
-  GET  /runs/{run_id}            — run detail page (stages + live log + gates)
-  GET  /runs/{run_id}/status     — HTMX poll partial
-  POST /runs/{run_id}/gate       — approve/abort a pending HITL gate
-  GET  /runs/{run_id}/artifact/{name}  — view an artifact (rendered or raw)
-  GET  /findings                 — findings browser
-  GET  /audit                    — audit log viewer
+The UI lives entirely in the React app at /app/* (built into frontend/dist).
+The backend only exposes:
+  - JSON API at /api/*
+  - Static assets at /app/assets/*
+  - SPA fallback at /app, /app/, /app/<anything> → index.html
+  - Bare-path redirects (/, /dashboard, /findings, …) → /app/<corresponding>
 
-Authorization: the home form requires an attestation checkbox. On submit we
-append to config/targets.json (deduped by repo URL) with attester handle and
-UTC timestamp; the underlying allowlist enforcement is unchanged.
+The old Jinja UI has been retired; templates remain on disk but are unused.
 """
 
 from __future__ import annotations
@@ -20,13 +15,14 @@ from __future__ import annotations
 import json
 import re
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 import markdown as md
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 from src.models.router import MODEL_DAILY_LIMITS
 from src.store.audit import AuditLog
@@ -43,12 +39,25 @@ DB_PATH = ROOT / "data" / "findings.db"
 WEB_DIR = Path(__file__).parent
 
 app = FastAPI(title="Bug-Bounty Pipeline")
-templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
-app.mount(
-    "/static",
-    StaticFiles(directory=str(WEB_DIR / "static")),
-    name="static",
+
+# Permissive CORS for the Vite dev server (and any local React dev origin).
+# Tighten origins in production if you put this behind a domain.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
+# Serve the built React app (frontend/dist/) at /app.
+# Mount only the assets directory; serve index.html via a catch-all so React
+# Router can handle client-side deep links (/app/dashboard, /app/about, …).
+FRONTEND_DIST = ROOT / "frontend" / "dist"
+if FRONTEND_DIST.exists():
+    assets_dir = FRONTEND_DIST / "assets"
+    if assets_dir.exists():
+        app.mount("/app/assets", StaticFiles(directory=str(assets_dir)), name="app-assets")
 
 manager = RunManager(
     repos_dir=REPOS_DIR,
@@ -83,7 +92,6 @@ def _iso_utc(ts: float) -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(ts))
 
 
-templates.env.filters["iso_utc"] = _iso_utc
 
 
 # Strip rich's ANSI-ish markup that leaks through when the Console writes to a
@@ -123,121 +131,39 @@ def _quota_rows() -> list[dict]:
     return out
 
 
-@app.get("/", response_class=HTMLResponse)
-def home(request: Request):
-    data = _load_targets()
-    return templates.TemplateResponse(
-        request,
-        "index.html",
-        {
-            "targets": data["authorized_targets"],
-            "runs": manager.list_runs()[:20],
-            "quota": _quota_rows(),
-        },
-    )
+# All HTML page routes are served by the React app (mounted at /app).
+# Bare paths redirect to their React equivalents so old bookmarks still work.
+
+@app.get("/")
+def root_redirect():
+    return RedirectResponse("/app/", status_code=307)
 
 
-@app.post("/runs")
-def create_run(
-    repo_url: str = Form(...),
-    ref: str = Form("main"),
-    stop_after: str = Form(""),
-    attested: str = Form(""),
-    attested_by: str = Form(""),
-    notes: str = Form(""),
-    auto_approve: str = Form(""),
-):
-    if not attested:
-        raise HTTPException(
-            status_code=400,
-            detail="Authorization attestation required — tick the box confirming you own or have permission to test this repo.",
-        )
-    repo_url = repo_url.strip()
-    if not re.match(r"^https?://", repo_url):
-        raise HTTPException(400, "Repo URL must start with http(s)://")
-
-    data = _load_targets()
-    target = next(
-        (t for t in data["authorized_targets"] if t["repo"] == repo_url),
-        None,
-    )
-    if target is None:
-        base = _repo_name_from_url(repo_url)
-        used = {t["name"] for t in data["authorized_targets"]}
-        name, i = base, 2
-        while name in used:
-            name = f"{base}-{i}"
-            i += 1
-        attester = (attested_by or "ui-user").strip()[:80]
-        extra = (notes or "").strip()[:200]
-        target = {
-            "name": name,
-            "repo": repo_url,
-            "ref": ref.strip() or "main",
-            "known_cve": None,
-            "category": "attested",
-            "notes": f"Attested by {attester} at {_iso_utc(time.time())}."
-            + (f" {extra}" if extra else ""),
-        }
-        data["authorized_targets"].append(target)
-        _save_targets(data)
-
-    stop = stop_after if stop_after in ("recon", "analyst", "exploit", "patch") else None
-    run_id = manager.start(
-        target,
-        stop_after=stop,
-        auto_approve=bool(auto_approve),
-    )
-    return RedirectResponse(f"/runs/{run_id}", status_code=303)
+@app.get("/dashboard")
+def dashboard_redirect():
+    return RedirectResponse("/app/dashboard", status_code=307)
 
 
-def _render_run_context(request: Request, run_id: str, template: str):
-    status = manager.get(run_id)
-    if status is None:
-        raise HTTPException(404, "Unknown run")
-    artifacts = manager.list_artifacts(run_id)
-    log_text = _clean_log(manager.log_tail(run_id))
-    usage = UsageStore(DB_PATH)
-    tokens = usage.run_totals(run_id)
-    usage.close()
-    return templates.TemplateResponse(
-        request,
-        template,
-        {
-            "status": status,
-            "artifacts": artifacts,
-            "run_id": run_id,
-            "log_text": log_text,
-            "tokens": tokens,
-        },
-    )
+@app.get("/about")
+def about_redirect():
+    return RedirectResponse("/app/about", status_code=307)
 
 
-@app.get("/runs/{run_id}", response_class=HTMLResponse)
-def run_detail(request: Request, run_id: str):
-    return _render_run_context(request, run_id, "run_detail.html")
+@app.get("/features")
+def features_redirect():
+    return RedirectResponse("/app/features", status_code=307)
 
 
-@app.get("/runs/{run_id}/status", response_class=HTMLResponse)
-def run_status_partial(request: Request, run_id: str):
-    return _render_run_context(request, run_id, "_run_status.html")
+@app.get("/contact")
+def contact_redirect():
+    return RedirectResponse("/app/contact", status_code=307)
 
 
-@app.post("/runs/{run_id}/gate")
-def run_gate_decide(
-    request: Request,
-    run_id: str,
-    gate: str = Form(...),
-    decision: str = Form(...),
-):
-    if decision not in ("approve", "abort"):
-        raise HTTPException(400, "decision must be approve|abort")
-    ok = manager.decide_gate(run_id, gate, decision == "approve")
-    if not ok:
-        raise HTTPException(
-            409, f"No pending gate '{gate}' for run {run_id} (already decided?)"
-        )
-    return RedirectResponse(f"/runs/{run_id}", status_code=303)
+
+
+@app.get("/runs/{run_id}")
+def run_detail_redirect(run_id: str):
+    return RedirectResponse(f"/app/runs/{run_id}", status_code=307)
 
 
 # ---------- Artifact rendering ----------
@@ -258,8 +184,144 @@ def _artifact_kind(name: str) -> str:
     return "raw"
 
 
-@app.get("/runs/{run_id}/artifact/{name}", response_class=HTMLResponse)
-def run_artifact(request: Request, run_id: str, name: str):
+@app.get("/runs/{run_id}/artifact/{name}")
+def artifact_redirect(run_id: str, name: str):
+    return RedirectResponse(f"/app/runs/{run_id}/artifact/{name}", status_code=307)
+
+
+@app.get("/findings")
+def findings_redirect(target: str | None = None):
+    suffix = f"?target={target}" if target else ""
+    return RedirectResponse(f"/app/findings{suffix}", status_code=307)
+
+
+@app.get("/audit")
+def audit_redirect():
+    return RedirectResponse("/app/audit", status_code=307)
+
+
+# =====================================================================
+# JSON API (for the React frontend in frontend/)
+# =====================================================================
+
+def _status_to_dict(status) -> dict:
+    """RunStatus → JSON-safe dict (drops StringIO log_buffer)."""
+    d = asdict(status)
+    d.pop("log_buffer", None)
+    return d
+
+
+@app.get("/api/health")
+def api_health():
+    return {"ok": True}
+
+
+# ---------- SPA fallback for the React app ----------
+@app.get("/app", include_in_schema=False)
+@app.get("/app/", include_in_schema=False)
+@app.get("/app/{full_path:path}", include_in_schema=False)
+def serve_spa(full_path: str = ""):
+    if not FRONTEND_DIST.exists():
+        raise HTTPException(404, "React build not present. Run `npm run build` in frontend/.")
+    # Real asset paths are handled by the /app/assets mount above; everything
+    # else is a React Router route — return index.html.
+    index = FRONTEND_DIST / "index.html"
+    return HTMLResponse(index.read_text())
+
+
+@app.get("/api/targets")
+def api_targets():
+    data = _load_targets()
+    return {"targets": data["authorized_targets"]}
+
+
+@app.get("/api/quota")
+def api_quota():
+    return {"quota": _quota_rows()}
+
+
+@app.get("/api/runs")
+def api_list_runs(limit: int = 20):
+    runs = manager.list_runs()[: max(1, min(limit, 100))]
+    return {"runs": [_status_to_dict(r) for r in runs]}
+
+
+@app.post("/api/runs")
+def api_create_run(payload: dict):
+    repo_url = (payload.get("repo_url") or "").strip()
+    ref = (payload.get("ref") or "main").strip() or "main"
+    stop_after = payload.get("stop_after") or ""
+    attested = bool(payload.get("attested"))
+    attested_by = (payload.get("attested_by") or "").strip()[:80]
+    notes = (payload.get("notes") or "").strip()[:200]
+    auto_approve = bool(payload.get("auto_approve"))
+
+    if not repo_url or not re.match(r"^https?://", repo_url):
+        raise HTTPException(400, "Repo URL must start with http(s)://")
+    if not attested:
+        raise HTTPException(400, "Attestation required")
+
+    data = _load_targets()
+    target = next(
+        (t for t in data["authorized_targets"] if t["repo"] == repo_url),
+        None,
+    )
+    if target is None:
+        base = _repo_name_from_url(repo_url)
+        used = {t["name"] for t in data["authorized_targets"]}
+        name, i = base, 2
+        while name in used:
+            name = f"{base}-{i}"
+            i += 1
+        target = {
+            "name": name,
+            "repo": repo_url,
+            "ref": ref,
+            "known_cve": None,
+            "category": "attested",
+            "notes": f"Attested by {attested_by or 'api-user'} at {_iso_utc(time.time())}."
+            + (f" {notes}" if notes else ""),
+        }
+        data["authorized_targets"].append(target)
+        _save_targets(data)
+
+    stop = stop_after if stop_after in ("recon", "analyst", "exploit", "patch") else None
+    run_id = manager.start(target, stop_after=stop, auto_approve=auto_approve)
+    return {"run_id": run_id}
+
+
+@app.get("/api/runs/{run_id}")
+def api_run_detail(run_id: str):
+    status = manager.get(run_id)
+    if status is None:
+        raise HTTPException(404, "Unknown run")
+    artifacts = manager.list_artifacts(run_id)
+    log_text = _clean_log(manager.log_tail(run_id))
+    usage = UsageStore(DB_PATH)
+    tokens = usage.run_totals(run_id)
+    usage.close()
+    return {
+        "status": _status_to_dict(status),
+        "artifacts": artifacts,
+        "log": log_text,
+        "tokens": tokens,
+    }
+
+
+@app.post("/api/runs/{run_id}/gate")
+def api_gate(run_id: str, payload: dict):
+    gate = (payload.get("gate") or "").strip()
+    decision = (payload.get("decision") or "").strip()
+    if decision not in ("approve", "abort"):
+        raise HTTPException(400, "decision must be approve|abort")
+    ok = manager.decide_gate(run_id, gate, decision == "approve")
+    if not ok:
+        raise HTTPException(409, f"No pending gate '{gate}' for run {run_id}")
+    return {"ok": True}
+
+
+@app.get("/api/runs/{run_id}/artifact/{name}")
+def api_artifact(run_id: str, name: str):
     if "/" in name or ".." in name or "\\" in name:
         raise HTTPException(400, "Bad artifact name")
     path = FINDINGS_DIR / run_id / name
@@ -267,57 +329,31 @@ def run_artifact(request: Request, run_id: str, name: str):
         raise HTTPException(404)
 
     kind = _artifact_kind(name)
-    ctx: dict = {"name": name, "run_id": run_id, "kind": kind}
+    out: dict = {"name": name, "run_id": run_id, "kind": kind}
 
     if kind == "report_md":
         raw = path.read_text(errors="replace")
-        html = md.markdown(
-            raw,
-            extensions=["fenced_code", "tables", "toc", "sane_lists"],
-        )
-        ctx["rendered_html"] = html
-        ctx["raw"] = raw
-        return templates.TemplateResponse(
-            request, "artifact_markdown.html", ctx
-        )
+        out["raw"] = raw
+        out["html"] = md.markdown(raw, extensions=["fenced_code", "tables", "toc", "sane_lists"])
+        return out
 
-    # JSON artifacts
     try:
-        data = json.loads(path.read_text())
+        out["data"] = json.loads(path.read_text())
     except (json.JSONDecodeError, ValueError):
-        ctx["raw"] = path.read_text(errors="replace")
-        return templates.TemplateResponse(request, "artifact.html", ctx)
-
-    ctx["data"] = data
-    ctx["raw"] = json.dumps(data, indent=2)
-
-    tmpl_map = {
-        "recon": "artifact_recon.html",
-        "analyst": "artifact_analyst.html",
-        "exploit": "artifact_exploit.html",
-        "patch": "artifact_patch.html",
-        "report": "artifact_report.html",
-    }
-    template = tmpl_map.get(kind, "artifact.html")
-    return templates.TemplateResponse(request, template, ctx)
+        out["raw"] = path.read_text(errors="replace")
+    return out
 
 
-# ---------- Findings & audit ----------
-
-@app.get("/findings", response_class=HTMLResponse)
-def findings_page(request: Request, target: str | None = None):
+@app.get("/api/findings")
+def api_findings(target: str | None = None):
     store = FindingsStore(DB_PATH)
     rows = store.list_findings(target=target)
     store.close()
-    return templates.TemplateResponse(
-        request,
-        "findings.html",
-        {"findings": rows, "target_filter": target},
-    )
+    return {"findings": rows, "target_filter": target}
 
 
-@app.get("/audit", response_class=HTMLResponse)
-def audit_page(request: Request):
+@app.get("/api/audit")
+def api_audit(limit: int = 200):
     entries: list[dict] = []
     if AUDIT_LOG.exists():
         for line in AUDIT_LOG.read_text().splitlines():
@@ -330,13 +366,9 @@ def audit_page(request: Request):
                 continue
     entries.reverse()
     ok, broken = AuditLog(AUDIT_LOG).verify()
-    return templates.TemplateResponse(
-        request,
-        "audit.html",
-        {
-            "entries": entries[:200],
-            "total": len(entries),
-            "chain_ok": ok,
-            "broken_line": broken,
-        },
-    )
+    return {
+        "entries": entries[: max(1, min(limit, 1000))],
+        "total": len(entries),
+        "chain_ok": ok,
+        "broken_line": broken,
+    }

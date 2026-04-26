@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Contact — Bug-Bounty Pipeline{% endblock %}
+{% block content %}
+
+<div class="container-narrow" style="margin-bottom: 2rem;">
+    <span class="eyebrow">Contact</span>
+    <h1 style="font-size: 2rem;">Get in touch</h1>
+    <p style="font-size: 1.05rem;">
+        Questions, suggestions, or want to nominate a target for the allowlist?
+        Drop a note — we read everything.
+    </p>
+</div>
+
+<div class="row" style="gap: 1.25rem;">
+    <section class="card grow" style="flex: 2 1 420px;">
+        <h2>Send a message</h2>
+        <form method="get" action="mailto:hello@example.com" class="run-form" id="contact-form">
+            <div class="row">
+                <label class="grow">
+                    <span>Your name</span>
+                    <input type="text" name="name" required>
+                </label>
+                <label class="grow">
+                    <span>Email</span>
+                    <input type="email" name="email" required>
+                </label>
+            </div>
+            <label>
+                <span>Subject</span>
+                <input type="text" name="subject" placeholder="e.g. Add my OSS repo to the allowlist">
+            </label>
+            <label>
+                <span>Message</span>
+                <textarea name="body" placeholder="Tell us a bit about the repo and your authorization to test it…" required></textarea>
+            </label>
+            <button type="submit">Send via email</button>
+        </form>
+        <p class="dim" style="font-size: 0.85rem; margin-top: 1rem;">This form opens your default mail client. We never store form data on this server.</p>
+    </section>
+
+    <aside class="card grow" style="flex: 1 1 260px;">
+        <h2>Other ways</h2>
+        <ul style="list-style: none; padding: 0; margin: 0; display: grid; gap: 0.85rem;">
+            <li>
+                <div class="dim" style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em;">Email</div>
+                <a href="mailto:hello@example.com">hello@example.com</a>
+            </li>
+            <li>
+                <div class="dim" style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em;">GitHub</div>
+                <a href="https://github.com/" rel="noopener">github.com/your-org</a>
+            </li>
+            <li>
+                <div class="dim" style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em;">Disclosure</div>
+                <a href="mailto:security@example.com">security@example.com</a>
+            </li>
+        </ul>
+
+        <h3 style="margin-top: 1.5rem;">Response time</h3>
+        <p style="font-size: 0.92rem;">Typically within two business days. For urgent disclosure issues, prefix the subject with <code>[urgent]</code>.</p>
+    </aside>
+</div>
+
+<section class="card">
+    <h2>Frequently asked</h2>
+    <details>
+        <summary>How do I add my repo to the allowlist?</summary>
+        <p>Open a PR adding an entry to <code>config/targets.json</code> with the repo URL, ref, category, and a note. Your handle is recorded in the audit log on first submission.</p>
+    </details>
+    <details>
+        <summary>Will the pipeline submit reports for me?</summary>
+        <p>No. The Report stage writes a Markdown file to disk. It never makes HTTP calls to bug-bounty platforms — disclosure is your decision.</p>
+    </details>
+    <details>
+        <summary>What happens if Docker isn't available?</summary>
+        <p>Exploit validation is skipped. The pipeline still proceeds to Patch and Report — the PoC is recorded as unexecuted, and that fact appears in the report.</p>
+    </details>
+    <details>
+        <summary>Which models does it use?</summary>
+        <p>Three tiers (fast / reasoning / coder). The default primary is <code>gemini-3-flash-preview</code> with a fallback chain to <code>gemini-2.5-flash</code> and <code>gemini-2.5-flash-lite</code>. Groq and OpenRouter are optional fallback providers.</p>
+    </details>
+</section>
+
+{% endblock %}
