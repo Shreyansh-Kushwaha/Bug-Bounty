@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Bug-Bounty Pipeline — Automated security research, end-to-end{% endblock %}
+{% block content %}
+
+<section class="hero">
+    <div class="hero-inner">
+        <div class="badge-row">
+            <span class="badge"><span class="dot"></span> Authorized targets only</span>
+            <span class="badge">5-stage AI pipeline</span>
+        </div>
+        <h1>Find, validate, and patch vulnerabilities <span class="grad">with AI agents</span></h1>
+        <p class="lead">
+            Chain LLM-driven agents for recon, hypothesis, exploit, patch, and disclosure —
+            with human gates and a tamper-evident audit log at every step.
+        </p>
+        <div class="hero-cta">
+            <a href="/dashboard" class="btn">Start a run
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </a>
+            <a href="/features" class="btn btn-secondary">See how it works</a>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container-narrow" style="text-align:center; margin-bottom: 2rem;">
+        <span class="eyebrow">Why this pipeline</span>
+        <h2 style="font-size: 1.8rem; letter-spacing: -0.02em;">Security research, but with guardrails</h2>
+        <p style="max-width: 620px; margin: 0 auto;">Built for authorized OSS repositories. Every stage is sandboxed, every action is logged, and reports are never auto-submitted.</p>
+    </div>
+
+    <div class="feature-grid">
+        <article class="feature">
+            <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </div>
+            <h3>Pattern-driven recon</h3>
+            <p>Semgrep + grep sweeps over the cloned repo to surface unsafe sinks: deserialization, eval/exec, SQL concatenation, and more.</p>
+        </article>
+
+        <article class="feature">
+            <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            </div>
+            <h3>Reasoning agents</h3>
+            <p>Three model tiers — fast, reasoning, coder — with provider failover across Gemini, Groq, and OpenRouter.</p>
+        </article>
+
+        <article class="feature">
+            <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <h3>Sandboxed PoCs</h3>
+            <p>Generated proofs run in ephemeral Docker containers with <code>--network none</code>, read-only roots, capped CPU/RAM/PIDs.</p>
+        </article>
+
+        <article class="feature">
+            <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            </div>
+            <h3>Human-in-the-loop</h3>
+            <p>Approval gates sit before Exploit and Report. Nothing weaponized, nothing disclosed without you in the loop.</p>
+        </article>
+
+        <article class="feature">
+            <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            </div>
+            <h3>Patch + regression test</h3>
+            <p>Each finding ships with a unified diff and a regression test designed to fail before the fix and pass after.</p>
+        </article>
+
+        <article class="feature">
+            <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            </div>
+            <h3>HackerOne-ready reports</h3>
+            <p>Structured Markdown reports with CVSS vector, reproduction steps, impact, and remediation — never auto-submitted.</p>
+        </article>
+    </div>
+</section>
+
+<section style="margin-top: 2.5rem;">
+    <div class="container-narrow" style="text-align:center; margin-bottom: 1.5rem;">
+        <span class="eyebrow">Pipeline at a glance</span>
+        <h2 style="font-size: 1.5rem;">Five stages, five typed agents</h2>
+    </div>
+
+    <div class="stage-row">
+        <div class="num">1</div>
+        <div>
+            <h3>Recon</h3>
+            <p>Clone the repo at a pinned ref, run pattern scans, and emit a ranked list of risky files and snippets.</p>
+        </div>
+    </div>
+    <div class="stage-row">
+        <div class="num">2</div>
+        <div>
+            <h3>Analyst</h3>
+            <p>An LLM forms vulnerability hypotheses with CWE, severity, evidence, and a precise file/line reference.</p>
+        </div>
+    </div>
+    <div class="stage-row">
+        <div class="num">3</div>
+        <div>
+            <h3>Exploit</h3>
+            <p>A non-destructive PoC is generated and validated in a Docker sandbox. <em>Human gate before this stage.</em></p>
+        </div>
+    </div>
+    <div class="stage-row">
+        <div class="num">4</div>
+        <div>
+            <h3>Patch</h3>
+            <p>The Coder tier proposes a minimal diff and a regression test that distinguishes vulnerable vs. patched behavior.</p>
+        </div>
+    </div>
+    <div class="stage-row">
+        <div class="num">5</div>
+        <div>
+            <h3>Report</h3>
+            <p>A HackerOne-style Markdown report is written to disk with CVSS, summary, repro, impact, and remediation.</p>
+        </div>
+    </div>
+</section>
+
+<section class="cta-panel">
+    <span class="eyebrow">Ready when you are</span>
+    <h2>Run the pipeline against an authorized target</h2>
+    <p style="max-width: 540px; margin: 0 auto 1.5rem;">Add an attestation, pick a stop point, and watch live progress in the dashboard.</p>
+    <div class="hero-cta">
+        <a href="/dashboard" class="btn">Open the dashboard</a>
+        <a href="/about" class="btn btn-secondary">Read the safety design</a>
+    </div>
+</section>
+
+{% endblock %}

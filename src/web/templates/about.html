@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}About — Bug-Bounty Pipeline{% endblock %}
+{% block content %}
+
+<div class="container-narrow" style="margin-bottom: 2rem;">
+    <span class="eyebrow">About</span>
+    <h1 style="font-size: 2rem;">Security research that respects boundaries</h1>
+    <p style="font-size: 1.05rem;">
+        Bug-Bounty Pipeline is an experimental platform that chains AI agents to identify, validate,
+        and patch vulnerabilities in <strong>authorized</strong> open-source repositories. Every action is logged.
+        No exploit is weaponized. No report is auto-disclosed.
+    </p>
+</div>
+
+<section class="card">
+    <h2>What this project is</h2>
+    <p>
+        A reproducible research harness around five LLM-driven stages — Recon, Analyst, Exploit, Patch, Report —
+        with provider failover, structured artifacts, and a SHA256 hash-chained audit log.
+    </p>
+    <p>
+        It's intentionally narrow in scope: we run only against repositories listed in <code>config/targets.json</code>.
+        Adding a target requires an attestation that the user owns or has written permission to test the repo, and that
+        attestation is recorded.
+    </p>
+</section>
+
+<section class="card">
+    <h2>Safety design</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Concern</th><th>Mitigation</th></tr></thead>
+            <tbody>
+                <tr><td>Targeting unauthorized repos</td><td>Allowlist enforcement at submit time + attestation in audit log.</td></tr>
+                <tr><td>Weaponized exploits</td><td>Exploit agent is system-prompted for non-destructive PoCs; <code>destructive=true</code> is refused.</td></tr>
+                <tr><td>Network exfiltration in PoC</td><td>Sandbox runs with <code>--network none</code>.</td></tr>
+                <tr><td>Host filesystem damage</td><td>Read-only rootfs; workdir mounted <code>:ro</code>; capped <code>--memory</code>, <code>--cpus</code>, <code>--pids-limit</code>.</td></tr>
+                <tr><td>Auto-submission of reports</td><td>Report stage writes to disk only — no HTTP calls to disclosure platforms.</td></tr>
+                <tr><td>Audit tampering</td><td>Each entry SHA256-hashes the previous entry. <code>audit verify</code> checks the chain.</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Tech stack</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Layer</th><th>Tool</th></tr></thead>
+            <tbody>
+                <tr><td>LLM SDK</td><td><code>google-genai</code> (replaces deprecated <code>google-generativeai</code>)</td></tr>
+                <tr><td>Fallback providers</td><td><code>groq</code>, OpenRouter (<code>openai</code> client)</td></tr>
+                <tr><td>Validation</td><td>Pydantic v2 models for every agent's I/O</td></tr>
+                <tr><td>JSON repair</td><td><code>json-repair</code> for slightly malformed model output</td></tr>
+                <tr><td>Static analysis</td><td><code>semgrep</code>, AST via <code>tree-sitter</code></td></tr>
+                <tr><td>Sandbox</td><td>Docker (graceful skip when unavailable)</td></tr>
+                <tr><td>Web UI</td><td>FastAPI + Jinja2 + htmx</td></tr>
+                <tr><td>Storage</td><td>SQLite findings index + append-only JSONL audit</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Limitations</h2>
+    <ul style="padding-left: 1.2rem; color: var(--fg-muted);">
+        <li>No Docker in Replit — PoCs are generated and saved but cannot be executed there.</li>
+        <li>Gemini free-tier quotas reset daily at UTC midnight.</li>
+        <li>Each run currently exploits only the top-ranked hypothesis.</li>
+        <li>Patches are <em>proposed</em> diffs — they are never applied to the repo automatically.</li>
+    </ul>
+</section>
+
+<section class="cta-panel">
+    <h2>Ready to run something?</h2>
+    <p style="max-width: 540px; margin: 0 auto 1.25rem;">Open the dashboard, attest the target, and start a recon stage.</p>
+    <div class="hero-cta">
+        <a href="/dashboard" class="btn">Open the dashboard</a>
+        <a href="/features" class="btn btn-secondary">See the pipeline stages</a>
+    </div>
+</section>
+
+{% endblock %}

@@ -1,0 +1,255 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =====================================================================
+   Design tokens (CSS variables consumed by tailwind.config.js colors)
+   ===================================================================== */
+:root,
+[data-theme="light"] {
+  --bg:           #f7f8fb;
+  --bg-elev:      #ffffff;
+  --bg-card:      #ffffff;
+  --bg-soft:      #f1f3f9;
+  --fg:           #0f172a;
+  --fg-muted:     #475569;
+  --fg-dim:       #64748b;
+  --accent:       #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-soft:  #eef2ff;
+  --accent-fg:    #ffffff;
+  --ok:           #16a34a;
+  --ok-soft:      #dcfce7;
+  --warn:         #d97706;
+  --warn-soft:    #fef3c7;
+  --bad:          #dc2626;
+  --bad-soft:     #fee2e2;
+  --border:       #e2e8f0;
+  --border-strong:#cbd5e1;
+  --code-bg:      #0f172a;
+  --code-fg:      #e2e8f0;
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-thumb-hover: #94a3b8;
+}
+[data-theme="dark"] {
+  --bg:           #0b0d12;
+  --bg-elev:      #12151c;
+  --bg-card:      #161922;
+  --bg-soft:      #1d2230;
+  --fg:           #e6e8ee;
+  --fg-muted:     #b4bac8;
+  --fg-dim:       #8a93a6;
+  --accent:       #818cf8;
+  --accent-hover: #a5b4fc;
+  --accent-soft:  rgba(129, 140, 248, 0.12);
+  --accent-fg:    #0b0d12;
+  --ok:           #4ade80;
+  --ok-soft:      rgba(74, 222, 128, 0.12);
+  --warn:         #fbbf24;
+  --warn-soft:    rgba(251, 191, 36, 0.12);
+  --bad:          #f87171;
+  --bad-soft:     rgba(248, 113, 113, 0.12);
+  --border:       #232838;
+  --border-strong:#2f3548;
+  --code-bg:      #0a0c11;
+  --code-fg:      #d8ddea;
+  --scrollbar-thumb: #2f3548;
+  --scrollbar-thumb-hover: #3f4760;
+}
+
+/* =====================================================================
+   Base
+   ===================================================================== */
+@layer base {
+  html { scroll-behavior: smooth; }
+  body {
+    @apply bg-bg text-fg font-sans antialiased;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+  h1, h2, h3, h4 {
+    @apply font-semibold tracking-tight;
+  }
+  a {
+    color: var(--accent);
+    transition: color 0.15s ease;
+  }
+  a:hover { color: var(--accent-hover); }
+  code {
+    font-family: theme("fontFamily.mono");
+    @apply text-[0.88em] px-1.5 py-0.5 rounded border;
+    background: var(--bg-soft);
+    border-color: var(--border);
+  }
+}
+
+/* =====================================================================
+   Custom scrollbar
+   ===================================================================== */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+/* =====================================================================
+   Components — used everywhere so the JSX stays clean.
+   ===================================================================== */
+@layer components {
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm
+           bg-accent text-accent-fg border border-transparent transition-all duration-150
+           hover:bg-accent-hover hover:-translate-y-px hover:shadow-pop;
+  }
+  .btn-secondary {
+    @apply bg-bg-card text-fg border border-border-strong
+           hover:bg-bg-soft hover:text-fg;
+  }
+  .btn-ghost {
+    @apply bg-transparent text-fg-muted border-transparent
+           hover:bg-bg-soft hover:text-fg;
+  }
+
+  /* Cards */
+  .card {
+    @apply bg-bg-card border border-border rounded-card shadow-soft p-6;
+  }
+
+  /* Inputs */
+  .input {
+    @apply w-full px-3.5 py-2.5 rounded-lg text-sm bg-bg-elev text-fg
+           border border-border-strong transition-colors duration-150
+           focus:outline-none focus:border-accent;
+  }
+  .input:focus {
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  /* Pills & badges */
+  .pill {
+    @apply inline-block px-2.5 py-0.5 rounded-full text-xs font-medium border
+           bg-bg-soft border-border text-fg-muted;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs
+           bg-bg-card border border-border text-fg-muted shadow-soft;
+  }
+  .eyebrow {
+    @apply inline-block uppercase tracking-wider text-xs font-semibold mb-2 text-accent;
+  }
+
+  /* Nav links */
+  .nav-link {
+    @apply inline-block px-3.5 py-2 rounded-md text-sm font-medium text-fg-muted
+           transition-colors duration-150
+           hover:bg-bg-soft hover:text-fg;
+  }
+  .nav-link.active {
+    @apply text-accent bg-accent-soft;
+  }
+
+  /* Hero gradient */
+  .hero-grad {
+    background:
+      radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--accent) 22%, transparent) 0%, transparent 35%),
+      radial-gradient(circle at 80% 0%, color-mix(in srgb, var(--accent-hover) 18%, transparent) 0%, transparent 35%),
+      var(--bg);
+  }
+  .text-grad {
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Section grid stage row (used on home + features) */
+  .stage-row {
+    @apply grid grid-cols-[40px_1fr] gap-4 p-5 rounded-xl bg-bg-card border border-border
+           transition-all duration-150;
+  }
+  .stage-row:hover {
+    border-color: var(--accent);
+    transform: translateX(2px);
+  }
+  .stage-row .num {
+    @apply w-9 h-9 rounded-lg grid place-items-center font-semibold;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  /* Code / log panels */
+  .code, .log {
+    background: var(--code-bg);
+    color: var(--code-fg);
+    @apply border border-border rounded-lg px-4 py-4 overflow-auto font-mono text-[13px] leading-relaxed;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* Stage chip variants */
+  .stage-chip {
+    @apply inline-block px-2.5 py-0.5 rounded-full text-xs font-medium border
+           bg-bg-soft border-border text-fg-muted;
+  }
+
+  .sev-chip {
+    @apply inline-block px-2 py-0.5 rounded text-xs font-semibold;
+  }
+
+  /* Tables — used on dashboard, findings, audit, about */
+  .data-table {
+    @apply w-full text-sm;
+  }
+  .data-table thead th {
+    @apply px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider
+           text-fg-dim bg-bg-soft border-b border-border;
+  }
+  .data-table tbody td {
+    @apply px-3 py-2 align-top border-b border-border;
+  }
+  .data-table tbody tr:last-child td {
+    @apply border-b-0;
+  }
+  .data-table tbody tr {
+    transition: background-color 0.12s ease;
+  }
+  .data-table tbody tr:hover td {
+    background: var(--bg-soft);
+  }
+}
+
+/* Light/dark stage chip palettes (data-attribute driven) */
+[data-theme="light"] .stage-chip[data-stage="recon"]   { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
+[data-theme="light"] .stage-chip[data-stage="analyst"] { background: #e0e7ff; color: #4338ca; border-color: #c7d2fe; }
+[data-theme="light"] .stage-chip[data-stage="exploit"] { background: #ffedd5; color: #c2410c; border-color: #fed7aa; }
+[data-theme="light"] .stage-chip[data-stage="patch"]   { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+[data-theme="light"] .stage-chip[data-stage="report"]  { background: #fef3c7; color: #a16207; border-color: #fde68a; }
+[data-theme="light"] .stage-chip[data-stage="done"]    { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+[data-theme="light"] .stage-chip[data-stage="error"]   { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+[data-theme="dark"] .stage-chip[data-stage="recon"]    { background: rgba(59,130,246,.15); color:#93c5fd; border-color: rgba(59,130,246,.3); }
+[data-theme="dark"] .stage-chip[data-stage="analyst"]  { background: rgba(99,102,241,.15); color:#c7d2fe; border-color: rgba(99,102,241,.3); }
+[data-theme="dark"] .stage-chip[data-stage="exploit"]  { background: rgba(249,115,22,.15); color:#fdba74; border-color: rgba(249,115,22,.3); }
+[data-theme="dark"] .stage-chip[data-stage="patch"]    { background: rgba(34,197,94,.15);  color:#86efac; border-color: rgba(34,197,94,.3); }
+[data-theme="dark"] .stage-chip[data-stage="report"]   { background: rgba(234,179,8,.15);  color:#fde047; border-color: rgba(234,179,8,.3); }
+[data-theme="dark"] .stage-chip[data-stage="done"]     { background: rgba(34,197,94,.15);  color: var(--ok); border-color: rgba(34,197,94,.3); }
+[data-theme="dark"] .stage-chip[data-stage="error"]    { background: rgba(239,68,68,.15);  color: var(--bad); border-color: rgba(239,68,68,.3); }
+
+.sev-chip[data-sev="critical"], .sev-chip[data-sev="high"] { background: var(--bad-soft); color: var(--bad); }
+.sev-chip[data-sev="medium"] { background: var(--warn-soft); color: var(--warn); }
+.sev-chip[data-sev="low"], .sev-chip[data-sev="informational"], .sev-chip[data-sev="info"] {
+  background: var(--accent-soft); color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

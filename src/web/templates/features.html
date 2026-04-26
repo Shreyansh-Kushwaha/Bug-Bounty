@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Features — Bug-Bounty Pipeline{% endblock %}
+{% block content %}
+
+<div class="container-narrow" style="text-align: center; margin-bottom: 2rem;">
+    <span class="eyebrow">Features</span>
+    <h1 style="font-size: 2rem;">Five typed agents, three model tiers, one audited pipeline</h1>
+    <p style="font-size: 1.05rem;">Each stage is a typed <code>Agent[TInput, TOutput]</code> — its input and output are Pydantic models, so we can swap models, providers, and prompts without touching the orchestrator.</p>
+</div>
+
+<section>
+    <h2 style="text-align: center; margin-bottom: 1.5rem;">Pipeline stages</h2>
+
+    <div class="stage-row">
+        <div class="num">1</div>
+        <div>
+            <h3>Recon — pattern sweep on a clean clone</h3>
+            <p>Clones the target at a pinned ref, then runs grep + Semgrep patterns for unsafe deserialization, <code>eval</code>/<code>exec</code>, SQL string concatenation, command injection, weak crypto, and more. Outputs a ranked list of risky files and snippets.</p>
+        </div>
+    </div>
+
+    <div class="stage-row">
+        <div class="num">2</div>
+        <div>
+            <h3>Analyst — hypothesis generation</h3>
+            <p>An LLM reads risky files in context and emits ranked vulnerability hypotheses. Each one carries a CWE, severity, file/line, evidence snippet, and a one-paragraph mechanism description — validated against a Pydantic model.</p>
+        </div>
+    </div>
+
+    <div class="stage-row">
+        <div class="num">3</div>
+        <div>
+            <h3>Exploit — non-destructive PoC + sandbox</h3>
+            <p>The Coder tier writes a PoC script for the top hypothesis. We execute it inside Docker with <code>--network none</code>, a read-only root, and capped memory/CPU/PIDs. Validation is by sentinel string in stdout — never by side effect.</p>
+        </div>
+    </div>
+
+    <div class="stage-row">
+        <div class="num">4</div>
+        <div>
+            <h3>Patch — minimal diff + regression test</h3>
+            <p>Proposes a unified diff against the cloned repo and a regression test that fails before the fix and passes after. The patch is never applied to the live repo — it lives as an artifact.</p>
+        </div>
+    </div>
+
+    <div class="stage-row">
+        <div class="num">5</div>
+        <div>
+            <h3>Report — HackerOne-style Markdown</h3>
+            <p>Drafts a structured report with title, CVSS vector + score, summary, repro steps, impact, remediation, and references. Saved to disk as Markdown — never auto-submitted to a disclosure platform.</p>
+        </div>
+    </div>
+</section>
+
+<section style="margin-top: 3rem;">
+    <h2 style="text-align: center; margin-bottom: 1.5rem;">Platform features</h2>
+    <div class="feature-grid">
+        <article class="feature">
+            <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <h3>Live progress</h3>
+            <p>htmx-powered status panel polls every two seconds — stage chips, log tail, gate prompts, and artifacts appear as they're produced.</p>
+        </article>
+
+        <article class="feature">
+            <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            </div>
+            <h3>Token + quota tracking</h3>
+            <p>Per-model daily request and token counts, with a UTC reset bar — so you never get blindsided by a hit quota mid-run.</p>
+        </article>
+
+        <article class="feature">
+            <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <h3>Audit log viewer</h3>
+            <p>Every event (run start, stage transition, gate decision, error) is appended to a SHA256 hash-chained log. The viewer flags broken chains.</p>
+        </article>
+
+        <article class="feature">
+            <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            </div>
+            <h3>Per-run artifacts</h3>
+            <p>JSON for each stage plus a Markdown report — all rendered with stage-specific viewers (hypotheses, diffs, PoCs, etc.).</p>
+        </article>
+
+        <article class="feature">
+            <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <h3>Provider failover</h3>
+            <p>Gemini → Groq → OpenRouter chain with exponential backoff on 429/503. Per-model fallback handles individual quota exhaustion.</p>
+        </article>
+
+        <article class="feature">
+            <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+            </div>
+            <h3>Findings index</h3>
+            <p>SQLite-backed cross-run index. Filter by target; see severity, CWE, validation, patch, and report status at a glance.</p>
+        </article>
+    </div>
+</section>
+
+<section class="cta-panel">
+    <h2>Try it on a repo you control</h2>
+    <p style="max-width: 540px; margin: 0 auto 1.25rem;">Add an attestation, choose <em>Recon only</em> for a low-cost first run, and watch the stages light up.</p>
+    <a href="/dashboard" class="btn">Open the dashboard</a>
+</section>
+
+{% endblock %}
