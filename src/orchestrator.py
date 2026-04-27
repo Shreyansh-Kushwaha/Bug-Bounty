@@ -29,6 +29,10 @@ from src.agents.exploit import ExploitAgent, ExploitInput, ExploitOutput
 from src.agents.patch import Patch, PatchAgent, PatchInput
 from src.agents.recon import ReconAgent, ReconInput, ReconOutput
 from src.agents.report import Report, ReportAgent, ReportInput
+from src.roadmap import build_roadmap
+from src.scanners.deps import scan_dependencies
+from src.scanners.secrets import scan_secrets, to_artifact as secrets_to_artifact
+from src.scoring import compute_scores
 from src.store.audit import AuditLog
 from src.store.findings import FindingsStore
 
@@ -56,6 +60,10 @@ class RunContext:
     exploits: dict[str, ExploitOutput] = field(default_factory=dict)
     patches: dict[str, Patch] = field(default_factory=dict)
     reports: dict[str, Report] = field(default_factory=dict)
+    secrets: dict | None = None
+    deps: dict | None = None
+    roadmap: dict | None = None
+    score: dict | None = None
 
 
 def _write(ctx: RunContext, name: str, data: dict) -> Path:
@@ -134,7 +142,35 @@ def run_pipeline(ctx: RunContext, stop_after: str | None = None) -> None:
     ctx.recon = recon
     _write(ctx, "01_recon", recon.model_dump())
     ctx.audit.append("recon.done", {"risky_files": len(recon.risky_files)})
+
+    # Deterministic scanners run alongside Recon. They never block the pipeline.
+    console.print("[dim]Running secrets + dependency scanners…[/]")
+    try:
+        secret_hits = scan_secrets(ctx.clone_dir)
+        ctx.secrets = secrets_to_artifact(secret_hits)
+        _write(ctx, "01b_secrets", ctx.secrets)
+        ctx.audit.append("secrets.done", {"total": ctx.secrets["total"]})
+        console.print(f"  secrets: {ctx.secrets['total']} hit(s)")
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[yellow]secrets scan failed: {e}[/]")
+        ctx.secrets = {"total": 0, "hits": [], "error": str(e)}
+    try:
+        ctx.deps = scan_dependencies(ctx.clone_dir)
+        _write(ctx, "01c_deps", ctx.deps)
+        ctx.audit.append("deps.done", {
+            "total": ctx.deps.get("total", 0),
+            "scanners_run": ctx.deps.get("scanners_run", []),
+        })
+        console.print(
+            f"  deps: {ctx.deps.get('total', 0)} vuln(s) "
+            f"(scanners: {', '.join(ctx.deps.get('scanners_run') or ['none']) })"
+        )
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[yellow]dep scan failed: {e}[/]")
+        ctx.deps = {"total": 0, "vulnerabilities": [], "error": str(e)}
+
     if stop_after == "recon":
+        _write_score(ctx, exploit_validated=None)
         return
 
     # --- Analyst ---
@@ -145,11 +181,23 @@ def run_pipeline(ctx: RunContext, stop_after: str | None = None) -> None:
     ctx.audit.append("analyst.done", {"hypotheses": len(analyst.hypotheses)})
     for h in analyst.hypotheses:
         console.print(f"  [dim]{h.id}[/] {h.cwe} {h.severity}/{h.exploitability} — {h.title}")
+
+    # Roadmap = all hypotheses + secrets + deps, ordered by priority.
+    ctx.roadmap = build_roadmap(
+        hypotheses=[h.model_dump() for h in analyst.hypotheses],
+        secrets_artifact=ctx.secrets,
+        deps_artifact=ctx.deps,
+    )
+    _write(ctx, "02b_roadmap", ctx.roadmap)
+    ctx.audit.append("roadmap.done", {"total": ctx.roadmap["total"]})
+
     if stop_after == "analyst":
+        _write_score(ctx, exploit_validated=None)
         return
 
     if not analyst.hypotheses:
         console.print("[yellow]No hypotheses produced — stopping.[/]")
+        _write_score(ctx, exploit_validated=None)
         return
 
     if not _confirm(
@@ -158,6 +206,7 @@ def run_pipeline(ctx: RunContext, stop_after: str | None = None) -> None:
     ):
         console.print("[yellow]Aborted by user at Exploit gate.[/]")
         ctx.audit.append("gate.abort", {"stage": "exploit"})
+        _write_score(ctx, exploit_validated=None)
         return
 
     # --- Exploit (top hypothesis only by default) ---
@@ -177,6 +226,7 @@ def run_pipeline(ctx: RunContext, stop_after: str | None = None) -> None:
     console.print(f"  validated={exploit_out.validated} reason={exploit_out.validation_reason}")
     if stop_after == "exploit":
         _record_finding(ctx, top, exploit_out, None, None)
+        _write_score(ctx, exploit_validated=exploit_out.validated)
         return
 
     if not exploit_out.validated:
@@ -184,6 +234,7 @@ def run_pipeline(ctx: RunContext, stop_after: str | None = None) -> None:
         if not docker_missing:
             console.print("[yellow]PoC did not validate. Skipping patch and report.[/]")
             _record_finding(ctx, top, exploit_out, None, None)
+            _write_score(ctx, exploit_validated=False)
             return
         console.print(
             "[yellow]Docker unavailable — PoC generated but not executed. "
@@ -194,6 +245,7 @@ def run_pipeline(ctx: RunContext, stop_after: str | None = None) -> None:
         console.print("[yellow]Aborted by user at Patch gate.[/]")
         ctx.audit.append("gate.abort", {"stage": "patch"})
         _record_finding(ctx, top, exploit_out, None, None)
+        _write_score(ctx, exploit_validated=exploit_out.validated)
         return
 
     # --- Patch ---
@@ -207,6 +259,7 @@ def run_pipeline(ctx: RunContext, stop_after: str | None = None) -> None:
     ctx.audit.append("patch.done", {"id": top.id, "files": [f.path for f in patch.files_modified]})
     if stop_after == "patch":
         _record_finding(ctx, top, exploit_out, patch, None)
+        _write_score(ctx, exploit_validated=exploit_out.validated)
         return
 
     # --- Report ---
@@ -218,17 +271,34 @@ def run_pipeline(ctx: RunContext, stop_after: str | None = None) -> None:
     ctx.reports[top.id] = report
     _write(ctx, f"05_report_{top.id}", report.model_dump())
     (ctx.artifact_dir / f"05_report_{top.id}.md").write_text(report.markdown)
+    (ctx.artifact_dir / f"05_report_{top.id}_eli5.md").write_text(report.eli5_markdown)
     ctx.audit.append("report.done", {
         "id": top.id, "cvss_score": report.cvss_score, "severity": report.severity,
     })
     console.print(f"  [green]{report.severity}[/] (CVSS {report.cvss_score}) — {report.title}")
 
     _record_finding(ctx, top, exploit_out, patch, report)
+    _write_score(ctx, exploit_validated=exploit_out.validated)
 
     console.print(
         f"\n[bold yellow]⚠ Report written to disk but NOT submitted.[/] "
         f"Review {ctx.artifact_dir}/05_report_{top.id}.md before any disclosure."
     )
+
+
+def _write_score(ctx: RunContext, *, exploit_validated: bool | None) -> None:
+    """Compute the per-category score from whatever artifacts exist so far,
+    write it as 06_score.json, and stash it on the run context."""
+    hyps = [h.model_dump() for h in (ctx.analyst.hypotheses if ctx.analyst else [])]
+    score = compute_scores(
+        secrets_artifact=ctx.secrets,
+        deps_artifact=ctx.deps,
+        analyst_hypotheses=hyps,
+        exploit_validated=exploit_validated,
+    )
+    ctx.score = score
+    _write(ctx, "06_score", score)
+    ctx.audit.append("score.done", {"overall": score["overall"], "grade": score["grade"]})
 
 
 def _record_finding(
