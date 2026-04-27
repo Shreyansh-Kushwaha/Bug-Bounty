@@ -34,7 +34,12 @@ class Report(BaseModel):
     impact: str = ""
     remediation: str = ""
     references: list[str] = Field(default_factory=list)
+    eli5: str = Field(
+        default="",
+        description="Plain-English explanation a non-technical reader can follow.",
+    )
     markdown: str = ""
+    eli5_markdown: str = ""
 
     def model_post_init(self, __context: object) -> None:
         if not self.markdown:
@@ -53,6 +58,17 @@ class Report(BaseModel):
                 f"## Remediation\n\n{self.remediation}\n\n"
                 f"## References\n\n{refs}\n"
             )
+        if not self.eli5_markdown:
+            body = self.eli5 or (
+                "A plain-English summary was not produced for this finding. "
+                "See the technical report above for details."
+            )
+            self.eli5_markdown = (
+                f"# {self.title} — Explained Simply\n\n"
+                f"**Severity:** {self.severity}\n\n"
+                f"{body}\n\n"
+                f"## What you should do\n\n{self.remediation or 'See the technical report.'}\n"
+            )
 
 
 class ReportAgent(Agent[ReportInput, Report]):
@@ -64,7 +80,11 @@ class ReportAgent(Agent[ReportInput, Report]):
             "You draft responsible-disclosure reports for bug bounty programs. "
             "Use HackerOne report structure: Summary, Steps to Reproduce, PoC, Impact, "
             "Suggested Remediation, References. Include a CVSS 3.1 vector and score. "
-            "Be precise, factual, and constructive. Output ONLY valid JSON."
+            "Be precise, factual, and constructive. "
+            "ALSO include an `eli5` field: 2-4 sentences in plain English a "
+            "non-technical reader (e.g. a small-business owner) can follow — no jargon, "
+            "no acronyms, just what could go wrong and why it matters. "
+            "Output ONLY valid JSON."
         )
 
     def build_prompt(self, inp: ReportInput) -> str:
@@ -105,7 +125,8 @@ Produce JSON:
   "proof_of_concept": "the PoC code or command",
   "impact": "what an attacker gains",
   "remediation": "how to fix",
-  "references": ["CWE URL", "related CVE if any"]
+  "references": ["CWE URL", "related CVE if any"],
+  "eli5": "2-4 sentences in plain English, no jargon"
 }}
 """
 
