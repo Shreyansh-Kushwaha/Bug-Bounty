@@ -19,10 +19,13 @@ from pathlib import Path
 import markdown as md
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from src.chat import ask as chat_ask
 from src.models.router import MODEL_DAILY_LIMITS
+from src.pdf_report import render_full_report_pdf, render_markdown_to_pdf
+from src.scoring import compute_scores
 from src.store.audit import AuditLog
 from src.store.findings import FindingsStore
 from src.store.usage import UsageStore
@@ -174,16 +177,26 @@ def run_detail_redirect(run_id: str):
 def _artifact_kind(name: str) -> str:
     if name == "01_recon.json":
         return "recon"
+    if name == "01b_secrets.json":
+        return "secrets"
+    if name == "01c_deps.json":
+        return "deps"
     if name == "02_analyst.json":
         return "analyst"
+    if name == "02b_roadmap.json":
+        return "roadmap"
     if name.startswith("03_exploit") and name.endswith(".json"):
         return "exploit"
     if name.startswith("04_patch") and name.endswith(".json"):
         return "patch"
+    if name.endswith("_eli5.md"):
+        return "eli5_md"
     if name.startswith("05_report") and name.endswith(".md"):
         return "report_md"
     if name.startswith("05_report") and name.endswith(".json"):
         return "report"
+    if name == "06_score.json":
+        return "score"
     return "raw"
 
 
@@ -340,7 +353,7 @@ def api_artifact(run_id: str, name: str):
     kind = _artifact_kind(name)
     out: dict = {"name": name, "run_id": run_id, "kind": kind}
 
-    if kind == "report_md":
+    if kind in ("report_md", "eli5_md"):
         raw = path.read_text(errors="replace")
         out["raw"] = raw
         out["html"] = md.markdown(raw, extensions=["fenced_code", "tables", "toc", "sane_lists"])
@@ -359,6 +372,106 @@ def api_findings(target: str | None = None):
     rows = store.list_findings(target=target)
     store.close()
     return {"findings": rows, "target_filter": target}
+
+
+@app.get("/api/runs/{run_id}/report.pdf")
+def api_run_report_pdf(run_id: str):
+    """Render the run's report into a styled multi-page PDF.
+
+    Prefers the structured 05_report_*.json (richer layout: cover page,
+    severity gauge, pipeline diagram, score chart, remediation checklist).
+    Falls back to typesetting 05_report_*.md if only that exists.
+    """
+    run_dir = FINDINGS_DIR / run_id
+    if not run_dir.is_dir():
+        raise HTTPException(404, "Unknown run")
+
+    json_candidates = sorted(p for p in run_dir.glob("05_report_*.json"))
+    if json_candidates:
+        report = json.loads(json_candidates[-1].read_text())
+        score = None
+        roadmap = None
+        score_path = run_dir / "06_score.json"
+        if score_path.exists():
+            score = json.loads(score_path.read_text())
+        roadmap_path = run_dir / "02b_roadmap.json"
+        if roadmap_path.exists():
+            roadmap = json.loads(roadmap_path.read_text())
+
+        # Resolve target name + repo url from the run id (target_<unix>) and targets file.
+        target_name = run_id.rsplit("_", 1)[0]
+        repo_url = ""
+        try:
+            data = _load_targets()
+            t = next((x for x in data["authorized_targets"] if x["name"] == target_name), None)
+            if t:
+                repo_url = t["repo"]
+        except Exception:  # noqa: BLE001
+            pass
+
+        pdf_bytes = render_full_report_pdf(
+            report=report, score=score, roadmap=roadmap,
+            target_name=target_name, repo_url=repo_url, run_id=run_id,
+        )
+    else:
+        md_candidates = sorted(run_dir.glob("05_report_*.md"))
+        md_candidates = [p for p in md_candidates if not p.name.endswith("_eli5.md")]
+        if not md_candidates:
+            raise HTTPException(404, "No report for this run yet")
+        pdf_bytes = render_markdown_to_pdf(md_candidates[-1].read_text(errors="replace"))
+
+    headers = {"Content-Disposition": f'inline; filename="{run_id}.pdf"'}
+    return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+
+
+@app.get("/api/score")
+def api_score_overview(run_id: str | None = None):
+    """Per-category score. With ?run_id=, returns that run's stored score
+    (06_score.json). Without, computes a quick all-time score from the
+    findings DB so the dashboard always has something to show."""
+    if run_id:
+        path = FINDINGS_DIR / run_id / "06_score.json"
+        if not path.exists():
+            raise HTTPException(404, "No score for that run yet")
+        return {"score": json.loads(path.read_text()), "scope": "run", "run_id": run_id}
+
+    # Aggregate fallback: convert each finding row into a hypothesis-like dict
+    # and compute an overall score across the whole DB.
+    store = FindingsStore(DB_PATH)
+    rows = store.list_findings()
+    store.close()
+    pseudo_hypotheses = [{"severity": r.get("severity") or "low",
+                          "exploitability": "high" if r.get("validated") else "medium",
+                          "cwe": r.get("cwe")} for r in rows]
+    score = compute_scores(
+        secrets_artifact=None,
+        deps_artifact=None,
+        analyst_hypotheses=pseudo_hypotheses,
+        exploit_validated=any(r.get("validated") for r in rows) if rows else None,
+    )
+    return {"score": score, "scope": "all", "findings_counted": len(rows)}
+
+
+@app.post("/api/chat")
+def api_chat(payload: dict):
+    """'Ask Security AI' — one-shot Q&A grounded in the findings DB and (if
+    given) a specific run's artifacts."""
+    question = (payload.get("question") or "").strip()
+    if not question:
+        raise HTTPException(400, "question is required")
+    run_id = payload.get("run_id")
+    if run_id and ("/" in run_id or ".." in run_id or "\\" in run_id):
+        raise HTTPException(400, "Bad run_id")
+    try:
+        result = chat_ask(
+            question=question[:2000],
+            findings_dir=FINDINGS_DIR,
+            db_path=DB_PATH,
+            run_id=run_id,
+        )
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"LLM call failed: {e}")
+    return result
 
 
 @app.get("/api/audit")
