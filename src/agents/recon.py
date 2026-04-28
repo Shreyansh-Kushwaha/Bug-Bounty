@@ -97,14 +97,48 @@ Produce JSON with this exact shape:
 
     @staticmethod
     def clone(repo_url: str, ref: str, dest: Path) -> None:
+        # Always capture output: git writes progress to stderr, and inheriting
+        # the worker thread's pipe causes SIGPIPE when the parent closes it.
         if dest.exists() and (dest / ".git").exists():
-            subprocess.run(["git", "-C", str(dest), "fetch", "--depth", "1", "origin", ref], check=False)
-            subprocess.run(["git", "-C", str(dest), "checkout", ref], check=False)
+            subprocess.run(
+                ["git", "-C", str(dest), "fetch", "--depth", "1", "origin", ref],
+                check=False, capture_output=True, text=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(dest), "checkout", ref],
+                check=False, capture_output=True, text=True,
+            )
             return
+
         dest.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
+
+        # Try the requested ref first. If the remote doesn't have that branch,
+        # fall back to whatever the default branch is (handles main vs master).
+        r = subprocess.run(
             ["git", "clone", "--depth", "1", "--branch", ref, repo_url, str(dest)],
-            check=True,
+            capture_output=True, text=True,
+        )
+        if r.returncode == 0:
+            return
+
+        err = (r.stderr or "") + (r.stdout or "")
+        if "Remote branch" in err and "not found" in err:
+            # Wipe the partial clone if any, then try the default branch.
+            if dest.exists():
+                import shutil
+                shutil.rmtree(dest, ignore_errors=True)
+            r2 = subprocess.run(
+                ["git", "clone", "--depth", "1", repo_url, str(dest)],
+                capture_output=True, text=True,
+            )
+            if r2.returncode == 0:
+                return
+            raise RuntimeError(
+                f"git clone failed for {repo_url} (also tried default branch): "
+                f"{(r2.stderr or r2.stdout or '').strip()[:300]}"
+            )
+        raise RuntimeError(
+            f"git clone failed for {repo_url}@{ref}: {err.strip()[:300]}"
         )
 
     @staticmethod
