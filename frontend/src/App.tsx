@@ -9,6 +9,7 @@ import About from "./pages/About";
 import Contact from "./pages/Contact";
 import RunDetail from "./pages/RunDetail";
 import Artifact from "./pages/Artifact";
+import Chat from "./pages/Chat";
 import NotFound from "./pages/NotFound";
 
 export default function App() {
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="contact" element={<Contact />} />
         <Route path="runs/:runId" element={<RunDetail />} />
         <Route path="runs/:runId/artifact/:name" element={<Artifact />} />
+        <Route path="chat" element={<Chat />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

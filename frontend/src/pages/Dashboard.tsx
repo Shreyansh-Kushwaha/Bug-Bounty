@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, fmtUtc, QuotaRow, RunStatus, Target } from "../lib/api";
 import StageChip from "../components/StageChip";
+import ScoreCard from "../components/ScoreCard";
 import { Field, SectionHead } from "../components/ui";
 
 export default function Dashboard() {
@@ -119,6 +120,15 @@ export default function Dashboard() {
             </button>
           </div>
         </form>
+      </section>
+
+      <section className="card mb-5">
+        <SectionHead
+          title="Security score"
+          hint="across all findings"
+          right={<Link to="/chat" className="btn btn-ghost text-sm py-1.5 px-3">Ask Security AI →</Link>}
+        />
+        <ScoreCard />
       </section>
 
       <section className="card mb-5">
