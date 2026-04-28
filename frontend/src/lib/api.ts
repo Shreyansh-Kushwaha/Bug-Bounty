@@ -85,6 +85,39 @@ export type ArtifactPayload = {
   html?: string;
 };
 
+export type CategoryScore = {
+  name: string;
+  score: number;
+  issues: number;
+  detail: string;
+};
+
+export type SecurityScore = {
+  overall: number;
+  grade: string;
+  risk_band: string;
+  categories: CategoryScore[];
+};
+
+export type ScoreResponse = {
+  score: SecurityScore;
+  scope: "run" | "all";
+  run_id?: string;
+  findings_counted?: number;
+};
+
+export type ChatResponse = {
+  answer: string;
+  model: string | null;
+  provider: string | null;
+  context_used: {
+    run_id: string | null;
+    findings_count: number;
+    has_report: boolean;
+    has_score: boolean;
+  } | null;
+};
+
 async function jget<T>(path: string): Promise<T> {
   const r = await fetch(path, { headers: { Accept: "application/json" } });
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}: ${path}`);
@@ -134,6 +167,12 @@ export const api = {
   }) => jpost<{ run_id: string }>("/api/runs", payload),
   decideGate: (id: string, gate: string, decision: "approve" | "abort") =>
     jpost<{ ok: boolean }>(`/api/runs/${encodeURIComponent(id)}/gate`, { gate, decision }),
+  score: (runId?: string) =>
+    jget<ScoreResponse>(runId ? `/api/score?run_id=${encodeURIComponent(runId)}` : "/api/score"),
+  chat: (question: string, runId?: string | null) =>
+    jpost<ChatResponse>("/api/chat", { question, run_id: runId || undefined }),
+  reportPdfUrl: (runId: string) =>
+    `/api/runs/${encodeURIComponent(runId)}/report.pdf`,
 };
 
 export function fmtUtc(ts: number | null | undefined): string {

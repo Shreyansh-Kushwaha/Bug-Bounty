@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Check, Pause, X } from "lucide-react";
+import { Check, Pause, X, FileDown, MessageSquare } from "lucide-react";
 import { api, fmtUtc, RunDetail as TRunDetail } from "../lib/api";
 import { usePoll } from "../hooks/usePoll";
 import StageChip from "../components/StageChip";
+import ScoreCard from "../components/ScoreCard";
 
 const STAGES = ["recon", "analyst", "exploit", "patch", "report"];
 const TERMINAL = new Set(["done", "error", "aborted"]);
@@ -24,6 +25,8 @@ export default function RunDetail() {
 
   const { status, artifacts, log, tokens } = data;
   const idx = STAGES.indexOf(status.current_stage);
+  const hasScore = artifacts.includes("06_score.json");
+  const hasReportMd = artifacts.some((a) => /^05_report_.*\.md$/.test(a) && !a.endsWith("_eli5.md"));
 
   async function decide(decision: "approve" | "abort") {
     if (!status.pending_gate) return;
@@ -141,6 +144,34 @@ export default function RunDetail() {
           </div>
         </>
       )}
+
+      {hasScore && (
+        <>
+          <H3>Score for this run</H3>
+          <div className="rounded-xl px-4 py-4 bg-bg-soft border border-border">
+            <ScoreCard runId={runId} compact />
+          </div>
+        </>
+      )}
+
+      <div className="flex flex-wrap gap-2 mt-4">
+        {hasReportMd && (
+          <a
+            href={api.reportPdfUrl(runId)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-ghost text-sm py-1.5 px-3 inline-flex items-center gap-1.5"
+          >
+            <FileDown size={14} /> Download report PDF
+          </a>
+        )}
+        <Link
+          to={`/chat?run_id=${encodeURIComponent(runId)}`}
+          className="btn btn-ghost text-sm py-1.5 px-3 inline-flex items-center gap-1.5"
+        >
+          <MessageSquare size={14} /> Ask AI about this run
+        </Link>
+      </div>
 
       <H3>Live log</H3>
       {log ? <pre className="log max-h-[380px]">{log}</pre> : <p className="text-fg-dim">No log output yet.</p>}
