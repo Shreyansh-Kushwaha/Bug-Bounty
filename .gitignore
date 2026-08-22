@@ -7,9 +7,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-data/*.db
-data/repos/
-data/findings/
+data/
 *.log
 .DS_Store
 .idea/

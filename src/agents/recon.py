@@ -5,6 +5,9 @@ Produces a JSON map that later agents (Analyst) consume.
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -68,11 +71,15 @@ class ReconAgent(Agent[ReconInput, ReconOutput]):
         tree = self._tree(inp.clone_dir)
         hits = self._grep_patterns(inp.clone_dir)
         deps = self._detect_deps(inp.clone_dir)
+        semgrep = self._semgrep_scan(inp.clone_dir)
 
         return f"""Target: {inp.target_name} ({inp.repo_url} @ {inp.ref})
 
 Repository tree (truncated):
 {tree[:4000]}
+
+Semgrep static-analysis findings (dataflow-aware; empty if semgrep unavailable):
+{semgrep[:4000]}
 
 Pattern scan hits:
 {hits[:4000]}
@@ -143,6 +150,52 @@ Produce JSON with this exact shape:
                             hits.append(f"{path.relative_to(root)}:{lineno} [{reason}] {line.strip()[:120]}")
                             break
         return "\n".join(hits[:200])
+
+    @staticmethod
+    def semgrep_available() -> bool:
+        return shutil.which("semgrep") is not None
+
+    @classmethod
+    def _semgrep_scan(cls, root: Path) -> str:
+        """Run Semgrep and return concise `path:line [rule/severity] message` lines.
+
+        Config comes from $SEMGREP_CONFIG (default: the `auto` registry ruleset).
+        Falls back to an empty string if semgrep is missing or the scan fails
+        (e.g. offline with no cached rules) — the pattern scan still provides signal.
+        """
+        if not cls.semgrep_available():
+            return ""
+        config = os.getenv("SEMGREP_CONFIG", "auto")
+        try:
+            proc = subprocess.run(
+                [
+                    "semgrep", "--config", config, "--json",
+                    "--quiet", "--metrics=off", "--timeout", "30",
+                    "--max-target-bytes", "1000000", str(root),
+                ],
+                capture_output=True, text=True, timeout=240,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return ""
+        if not proc.stdout.strip():
+            return ""
+        try:
+            data = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return ""
+        lines = []
+        for r in data.get("results", []):
+            try:
+                rel = Path(r["path"]).relative_to(root)
+            except ValueError:
+                rel = r["path"]
+            extra = r.get("extra", {})
+            sev = extra.get("severity", "INFO")
+            msg = (extra.get("message", "") or "").strip().replace("\n", " ")
+            rule = r.get("check_id", "").split(".")[-1]
+            start = r.get("start", {}).get("line", "?")
+            lines.append(f"{rel}:{start} [{rule}/{sev}] {msg[:140]}")
+        return "\n".join(lines[:120])
 
     @staticmethod
     def _detect_deps(root: Path) -> str:

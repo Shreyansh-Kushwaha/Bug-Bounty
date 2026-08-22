@@ -38,15 +38,34 @@ class AuditLog:
     def _last_hash(self) -> str:
         if not self.path.exists() or self.path.stat().st_size == 0:
             return "GENESIS"
+        last = self._read_last_line()
+        if last is None:
+            return "GENESIS"
+        return json.loads(last)["hash"]
+
+    def _read_last_line(self) -> str | None:
+        """Return the last non-empty line, reading from the end in growing chunks
+        so a single line larger than any fixed buffer is still read in full."""
         with self.path.open("rb") as f:
             f.seek(0, 2)
             size = f.tell()
-            f.seek(max(0, size - 4096))
-            tail = f.read().decode(errors="ignore")
-        lines = [l for l in tail.splitlines() if l.strip()]
-        if not lines:
-            return "GENESIS"
-        return json.loads(lines[-1])["hash"]
+            chunk = 4096
+            buf = b""
+            pos = size
+            while pos > 0:
+                step = min(chunk, pos)
+                pos -= step
+                f.seek(pos)
+                buf = f.read(step) + buf
+                lines = [l for l in buf.split(b"\n") if l.strip()]
+                # Once we have a complete line (i.e. buf starts at file start or
+                # there is a newline before the last line), the last one is final.
+                if pos == 0 or (len(lines) >= 1 and b"\n" in buf[: buf.rfind(lines[-1])]):
+                    if lines:
+                        return lines[-1].decode(errors="ignore")
+                    return None
+                chunk *= 2
+        return None
 
     def verify(self) -> tuple[bool, int | None]:
         """Return (ok, first_broken_line_number or None)."""

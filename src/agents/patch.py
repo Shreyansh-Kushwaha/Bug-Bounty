@@ -31,6 +31,10 @@ class Patch(BaseModel):
     regression_test_code: str
     rationale: str
     minimal: bool = Field(description="True if this is the smallest safe fix")
+    verification: dict | None = Field(
+        default=None,
+        description="Filled in by the patch verifier after the agent runs.",
+    )
 
 
 class PatchAgent(Agent[PatchInput, Patch]):

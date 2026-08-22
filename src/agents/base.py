@@ -11,7 +11,7 @@ from typing import Generic, TypeVar
 from pydantic import BaseModel, ValidationError
 from rich.console import Console
 
-from src.models.router import ModelRouter, Tier, default_router
+from src.models.router import LLMResponse, ModelRouter, Tier, default_router
 
 TInput = TypeVar("TInput", bound=BaseModel)
 TOutput = TypeVar("TOutput", bound=BaseModel)
@@ -27,6 +27,7 @@ class Agent(ABC, Generic[TInput, TOutput]):
 
     def __init__(self, router: ModelRouter | None = None):
         self.router = router or default_router()
+        self.last_response: LLMResponse | None = None
 
     @abstractmethod
     def system_prompt(self) -> str: ...
@@ -42,17 +43,39 @@ class Agent(ABC, Generic[TInput, TOutput]):
         console.print(f"[dim]tier={self.tier.value} providers={self.router.active_providers()}[/]")
 
         prompt = self.build_prompt(inp)
-        resp = self.router.call(prompt, system=self.system_prompt(), tier=self.tier)
-
-        console.print(f"[green]↳ {resp.provider}/{resp.model}[/]")
-
-        parsed = self._parse_json(resp.text)
+        parsed = self._call_and_parse(prompt, self.system_prompt())
         try:
             return self.output_model().model_validate(parsed)
         except ValidationError as e:
             console.print(f"[red]Validation failed:[/]\n{e}")
-            console.print(f"[dim]Raw model output:\n{resp.text[:2000]}[/]")
             raise
+
+    def _call_and_parse(self, prompt: str, system: str, max_repairs: int = 1) -> dict:
+        """Call the model and parse JSON, with a one-shot repair reprompt on failure."""
+        resp = self.router.call(prompt, system=system, tier=self.tier)
+        self.last_response = resp
+        cached = " [dim](cached)[/]" if resp.cached else ""
+        console.print(f"[green]↳ {resp.provider}/{resp.model}[/]{cached}")
+
+        last_err: Exception | None = None
+        for attempt in range(max_repairs + 1):
+            try:
+                return self._parse_json(resp.text)
+            except (ValueError, json.JSONDecodeError) as e:
+                last_err = e
+                if attempt >= max_repairs:
+                    break
+                console.print(f"[yellow]Malformed JSON — asking the model to repair (attempt {attempt + 1}).[/]")
+                repair_prompt = (
+                    "Your previous response was not valid JSON and could not be parsed.\n"
+                    f"Parser error: {e}\n\n"
+                    "Return ONLY a single valid JSON object — no prose, no code fences, "
+                    "no trailing commentary. Here was your previous output:\n\n"
+                    f"{resp.text[:6000]}"
+                )
+                resp = self.router.call(repair_prompt, system=system, tier=self.tier)
+                self.last_response = resp
+        raise ValueError(f"Could not parse JSON after {max_repairs} repair attempt(s): {last_err}")
 
     @staticmethod
     def _parse_json(text: str) -> dict:

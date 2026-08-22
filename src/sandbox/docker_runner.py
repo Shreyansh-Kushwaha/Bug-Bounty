@@ -140,3 +140,57 @@ def run_poc(
             )
         except FileNotFoundError:
             return SandboxResult(False, None, "", "", False, reason="docker CLI missing")
+
+
+def run_command_in_dir(
+    host_dir: Path,
+    command: list[str],
+    language: str = "python",
+    timeout_sec: int = 120,
+    memory_mb: int = 512,
+    cpu_quota: float = 1.0,
+    network: bool = False,
+    writable: bool = True,
+) -> SandboxResult:
+    """Run `command` inside a container with `host_dir` mounted at /work.
+
+    Used by the patch verifier to run a project's regression test against the
+    (optionally patched) source tree. Network is OFF by default; enable it only
+    when the caller explicitly needs to install dependencies to run tests.
+    """
+    if not docker_available():
+        return SandboxResult(
+            executed=False, exit_code=None, stdout="", stderr="", timed_out=False,
+            reason="Docker not available; cannot verify patch in a sandbox.",
+        )
+    if language not in DEFAULT_IMAGES:
+        return SandboxResult(False, None, "", "", False, reason=f"Unsupported language: {language}")
+
+    image = DEFAULT_IMAGES[language]
+    container = f"bughunter_verify_{uuid.uuid4().hex[:8]}"
+    mount = f"{host_dir}:/work" if writable else f"{host_dir}:/work:ro"
+    docker_cmd = [
+        "docker", "run", "--rm", "--name", container,
+        "--network", "bridge" if network else "none",
+        "--memory", f"{memory_mb}m", "--cpus", str(cpu_quota),
+        "--pids-limit", "256",
+        "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "-v", mount, "-w", "/work",
+        image, *command,
+    ]
+    try:
+        proc = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=timeout_sec)
+        return SandboxResult(
+            executed=True, exit_code=proc.returncode,
+            stdout=proc.stdout[-8000:], stderr=proc.stderr[-8000:], timed_out=False,
+        )
+    except subprocess.TimeoutExpired as e:
+        subprocess.run(["docker", "kill", container], capture_output=True)
+        return SandboxResult(
+            executed=True, exit_code=None,
+            stdout=(e.stdout or b"").decode(errors="ignore")[-8000:] if isinstance(e.stdout, bytes) else (e.stdout or "")[-8000:],
+            stderr=(e.stderr or b"").decode(errors="ignore")[-8000:] if isinstance(e.stderr, bytes) else (e.stderr or "")[-8000:],
+            timed_out=True,
+        )
+    except FileNotFoundError:
+        return SandboxResult(False, None, "", "", False, reason="docker CLI missing")
