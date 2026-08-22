@@ -51,6 +51,8 @@ def dedupe_key(target: str, cwe: str | None, file: str | None, line_range: str |
 class FindingsStore:
     def __init__(self, db_path: Path):
         db_path.parent.mkdir(parents=True, exist_ok=True)
+        # check_same_thread=False so the store can be created in one thread
+        # (e.g. the web request handler) and written from another (the worker).
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._lock = threading.Lock()

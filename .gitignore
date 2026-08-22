@@ -12,4 +12,9 @@ data/
 .DS_Store
 .idea/
 .vscode/
-/claude/
+# Claude Code / AI assistants
+.claude/
+CLAUDE.md
+.anthropic/
+.aider*
+

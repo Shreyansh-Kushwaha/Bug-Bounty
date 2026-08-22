@@ -1,13 +1,16 @@
 """Multi-provider LLM router with automatic failover, caching, and cost tracking.
 
 Tiers:
-  - reasoning: deep code analysis (Analyst, Patch) -> Gemini 2.5 Pro / DeepSeek R1
+  - reasoning: deep code analysis (Analyst, Patch) -> Gemini / DeepSeek R1
   - fast:      routing, classification, summarization -> Gemini Flash / Groq Llama
   - coder:     patch writing                          -> Qwen 2.5 Coder / DeepSeek
 
 Providers are tried in order; on rate-limit or transient error, falls through.
-Responses can be cached on disk (keyed by prompt+system+model) so re-runs are
-free and deterministic. Every call records token usage and an estimated cost.
+Within a provider, models are tried in a fallback chain (primary -> fallbacks)
+on 429/503/overload errors. Responses can be cached on disk (keyed by
+prompt+system+model) so re-runs are free and deterministic. Every call records
+token usage, an estimated cost, and (best-effort) a persistent per-run usage
+row for the dashboard/quota tracking.
 """
 
 from __future__ import annotations
@@ -64,11 +67,21 @@ _PRICES: dict[str, tuple[float, float]] = {
     "gemini-2.5-pro": (1.25, 10.0),
     "gemini-flash-latest": (0.10, 0.40),
     "gemini-2.5-flash": (0.10, 0.40),
+    "gemini-2.5-flash-lite": (0.05, 0.20),
+    "gemini-3-flash-preview": (0.10, 0.40),
     "gemini-2.0-flash": (0.10, 0.40),
     "llama-3.3-70b-versatile": (0.59, 0.79),
     "llama-3.1-8b-instant": (0.05, 0.08),
     "claude-sonnet-5": (3.0, 15.0),
     "claude-haiku-4-5-20251001": (1.0, 5.0),
+}
+
+# Hardcoded Gemini free-tier daily request limits on this project's API key.
+# Update as Google revises them. Missing keys mean "no limit enforced / unknown".
+MODEL_DAILY_LIMITS: dict[str, int] = {
+    "gemini-2.5-flash-lite": 20,
+    "gemini-2.5-flash": 50,
+    "gemini-3-flash-preview": 50,
 }
 
 
@@ -82,6 +95,36 @@ def _approx_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
+_usage_store_singleton = None
+
+
+def _usage_store():
+    """Lazy singleton so the CLI doesn't pay the import/connect cost unless used."""
+    global _usage_store_singleton
+    if _usage_store_singleton is None:
+        from src.store.usage import UsageStore
+        root = Path(__file__).resolve().parent.parent.parent
+        _usage_store_singleton = UsageStore(root / "data" / "findings.db")
+    return _usage_store_singleton
+
+
+def _record_usage(resp: LLMResponse) -> None:
+    """Persist a usage row for the dashboard/quota tracking. Best-effort — a
+    telemetry failure must never break the LLM call it's recording."""
+    try:
+        from src.current_run import get_run_id
+        _usage_store().record(
+            run_id=get_run_id(),
+            provider=resp.provider,
+            model=resp.model,
+            prompt_tokens=resp.usage.prompt_tokens,
+            completion_tokens=resp.usage.completion_tokens,
+            total_tokens=resp.usage.total_tokens,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
 class _Provider:
     name: str
 
@@ -92,12 +135,17 @@ class _Provider:
 class GeminiProvider(_Provider):
     name = "gemini"
 
-    # `-latest` aliases auto-update so model names don't go stale. Override any
-    # tier via env, e.g. GEMINI_MODEL_FAST=gemini-3.6-flash.
+    # Override any tier via env, e.g. GEMINI_MODEL_FAST=gemini-3.6-flash.
     MODELS = {
-        Tier.REASONING: os.getenv("GEMINI_MODEL_REASONING", "gemini-pro-latest"),
-        Tier.FAST: os.getenv("GEMINI_MODEL_FAST", "gemini-flash-latest"),
-        Tier.CODER: os.getenv("GEMINI_MODEL_CODER", "gemini-pro-latest"),
+        Tier.REASONING: os.getenv("GEMINI_MODEL_REASONING", "gemini-3-flash-preview"),
+        Tier.FAST: os.getenv("GEMINI_MODEL_FAST", "gemini-3-flash-preview"),
+        Tier.CODER: os.getenv("GEMINI_MODEL_CODER", "gemini-3-flash-preview"),
+    }
+    # Ordered fallback list per tier — tried in sequence on 429/503/overload.
+    FALLBACK_MODELS: dict[Tier, list[str]] = {
+        Tier.REASONING: ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
+        Tier.FAST: ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
+        Tier.CODER: ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
     }
 
     def __init__(self):
@@ -109,26 +157,40 @@ class GeminiProvider(_Provider):
 
     def _get_client(self):
         if self._client is None:
-            import google.generativeai as genai
-            genai.configure(api_key=self.key)
-            self._client = genai
+            from google import genai
+            self._client = genai.Client(api_key=self.key)
         return self._client
 
     def call(self, prompt: str, system: str | None, tier: Tier) -> LLMResponse:
-        genai = self._get_client()
-        model_name = self.MODELS[tier]
-        model = genai.GenerativeModel(model_name, system_instruction=system)
-        resp = model.generate_content(prompt)
-        usage = Usage()
-        meta = getattr(resp, "usage_metadata", None)
-        if meta is not None:
-            usage.prompt_tokens = getattr(meta, "prompt_token_count", 0) or 0
-            usage.completion_tokens = getattr(meta, "candidates_token_count", 0) or 0
-        else:
-            usage.prompt_tokens = _approx_tokens((system or "") + prompt)
-            usage.completion_tokens = _approx_tokens(resp.text)
-        usage.cost_usd = _estimate_cost(model_name, usage)
-        return LLMResponse(text=resp.text, provider=self.name, model=model_name, usage=usage)
+        client = self._get_client()
+        from google.genai import types
+        config = types.GenerateContentConfig(system_instruction=system) if system else None
+        candidates = [self.MODELS[tier]] + self.FALLBACK_MODELS.get(tier, [])
+        last_err: Exception | None = None
+        for model_name in candidates:
+            try:
+                resp = client.models.generate_content(
+                    model=model_name, contents=prompt, config=config,
+                )
+                meta = getattr(resp, "usage_metadata", None)
+                usage = Usage(
+                    prompt_tokens=getattr(meta, "prompt_token_count", 0) or 0,
+                    completion_tokens=getattr(meta, "candidates_token_count", 0) or 0,
+                )
+                usage.cost_usd = _estimate_cost(model_name, usage)
+                llm = LLMResponse(text=resp.text, provider=self.name, model=model_name, usage=usage)
+                _record_usage(llm)
+                return llm
+            except Exception as e:  # noqa: BLE001
+                msg = str(e).lower()
+                if any(k in msg for k in (
+                    "503", "unavailable", "overloaded", "high demand",
+                    "quota", "429", "resource_exhausted",
+                )):
+                    last_err = e
+                    continue
+                raise
+        raise last_err
 
 
 class GroqProvider(_Provider):
@@ -166,12 +228,14 @@ class GroqProvider(_Provider):
             temperature=0.2,
         )
         usage = _usage_from_openai(resp, model_name, system, prompt)
-        return LLMResponse(
+        llm = LLMResponse(
             text=resp.choices[0].message.content,
             provider=self.name,
             model=model_name,
             usage=usage,
         )
+        _record_usage(llm)
+        return llm
 
 
 class OpenRouterProvider(_Provider):
@@ -212,12 +276,14 @@ class OpenRouterProvider(_Provider):
             temperature=0.2,
         )
         usage = _usage_from_openai(resp, model_name, system, prompt)
-        return LLMResponse(
+        llm = LLMResponse(
             text=resp.choices[0].message.content,
             provider=self.name,
             model=model_name,
             usage=usage,
         )
+        _record_usage(llm)
+        return llm
 
 
 class AnthropicProvider(_Provider):
@@ -258,7 +324,9 @@ class AnthropicProvider(_Provider):
             usage.prompt_tokens = resp.usage.input_tokens
             usage.completion_tokens = resp.usage.output_tokens
         usage.cost_usd = _estimate_cost(model_name, usage)
-        return LLMResponse(text=text, provider=self.name, model=model_name, usage=usage)
+        llm = LLMResponse(text=text, provider=self.name, model=model_name, usage=usage)
+        _record_usage(llm)
+        return llm
 
 
 class OllamaProvider(_Provider):
@@ -295,7 +363,9 @@ class OllamaProvider(_Provider):
             prompt_tokens=data.get("prompt_eval_count", _approx_tokens((system or "") + prompt)),
             completion_tokens=data.get("eval_count", _approx_tokens(text)),
         )
-        return LLMResponse(text=text, provider=self.name, model=self.model, usage=usage)
+        llm = LLMResponse(text=text, provider=self.name, model=self.model, usage=usage)
+        _record_usage(llm)
+        return llm
 
 
 class MockProvider(_Provider):
@@ -435,7 +505,7 @@ class ModelRouter:
         prompt: str,
         system: str | None = None,
         tier: Tier = Tier.REASONING,
-        max_retries_per_provider: int = 2,
+        max_retries_per_provider: int = 3,
     ) -> LLMResponse:
         errors: list[tuple[str, Exception]] = []
         for provider in self._active:
@@ -455,8 +525,8 @@ class ModelRouter:
                 except Exception as e:  # noqa: BLE001 — intentionally broad for failover
                     errors.append((provider.name, e))
                     msg = str(e).lower()
-                    if any(k in msg for k in ("rate", "quota", "429")):
-                        time.sleep(2 ** attempt)
+                    if any(k in msg for k in ("rate", "quota", "429", "503", "unavailable", "overloaded")):
+                        time.sleep(5 * (2 ** attempt))
                         continue
                     break
         raise AllProvidersExhausted(
