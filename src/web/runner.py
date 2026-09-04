@@ -17,7 +17,7 @@ from io import StringIO
 from pathlib import Path
 
 from src.current_run import set_run_id
-from src.orchestrator import new_run_context, run_pipeline
+from src.orchestrator import RunCancelled, new_run_context, run_pipeline
 from src.web import log_tee
 
 
@@ -85,6 +85,7 @@ class RunManager:
         self._runs: dict[str, RunStatus] = {}
         self._gate_events: dict[str, threading.Event] = {}
         self._gate_decisions: dict[str, bool] = {}
+        self._cancel_events: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
         log_tee.install()
 
@@ -93,6 +94,8 @@ class RunManager:
         target: dict,
         stop_after: str | None = None,
         auto_approve: bool = False,
+        resume: bool = False,
+        run_id: str | None = None,
     ) -> str:
         status = RunStatus(
             run_id="",  # filled below
@@ -105,6 +108,7 @@ class RunManager:
             log_buffer=StringIO(),
         )
 
+        cancel_event = threading.Event()
         gate_callback = None if auto_approve else self._make_gate_callback(status)
         ctx = new_run_context(
             target=target,
@@ -114,18 +118,25 @@ class RunManager:
             db_path=self.db_path,
             auto_approve=auto_approve,
             gate_callback=gate_callback,
+            cancel_check=cancel_event.is_set,
+            run_id=run_id,
         )
         status.run_id = ctx.run_id
         with self._lock:
             self._runs[ctx.run_id] = status
+            self._cancel_events[ctx.run_id] = cancel_event
 
         def _worker():
             log_tee.set_buffer(status.log_buffer)
             set_run_id(ctx.run_id)
             try:
-                run_pipeline(ctx, stop_after=stop_after)
-                if status.current_stage not in ("error", "aborted"):
+                run_pipeline(ctx, stop_after=stop_after, resume=resume)
+                if cancel_event.is_set():
+                    status.current_stage = "aborted"
+                elif status.current_stage not in ("error", "aborted"):
                     status.current_stage = "done"
+            except RunCancelled:
+                status.current_stage = "aborted"
             except Exception as e:  # noqa: BLE001
                 status.error = f"{type(e).__name__}: {e}"
                 status.current_stage = "error"
@@ -136,6 +147,8 @@ class RunManager:
                     ev.set()
             finally:
                 status.finished_at = time.time()
+                with self._lock:
+                    self._cancel_events.pop(ctx.run_id, None)
                 log_tee.set_buffer(None)
                 set_run_id(None)
 
@@ -143,6 +156,31 @@ class RunManager:
             target=_worker, daemon=True, name=f"run-{ctx.run_id}"
         ).start()
         return ctx.run_id
+
+    def cancel(self, run_id: str) -> bool:
+        """Request cancellation. Stops at the next stage boundary; if the run is
+        blocked on a human gate, aborts that gate immediately."""
+        with self._lock:
+            status = self._runs.get(run_id)
+            event = self._cancel_events.get(run_id)
+            pending = status.pending_gate if status else None
+        if event is None or status is None:
+            return False
+        if status.current_stage in ("done", "error", "aborted"):
+            return False
+        event.set()
+        if pending:
+            self.decide_gate(run_id, pending, False)
+        return True
+
+    def resume(self, target: dict, run_id: str, stop_after: str | None = None,
+               auto_approve: bool = False) -> str:
+        """Re-run a prior run in place, reusing its on-disk recon/analyst
+        artifacts (same run_id and artifact directory)."""
+        return self.start(
+            target, stop_after=stop_after, auto_approve=auto_approve,
+            resume=True, run_id=run_id,
+        )
 
     def _make_gate_callback(self, status: RunStatus):
         run_id = None  # captured below via closure after run_id is set

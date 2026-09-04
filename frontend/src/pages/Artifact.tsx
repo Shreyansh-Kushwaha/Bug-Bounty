@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { api, ArtifactPayload } from "../lib/api";
+import { Loading, ErrorBanner } from "../components/states";
 
 export default function Artifact() {
   const { runId = "", name = "" } = useParams();
@@ -12,8 +13,8 @@ export default function Artifact() {
     api.artifact(runId, decodeURIComponent(name)).then(setData).catch((e) => setError(String(e)));
   }, [runId, name]);
 
-  if (error) return <div className="card text-bad">{error}</div>;
-  if (!data) return <div className="card">Loading…</div>;
+  if (error) return <ErrorBanner message={error} />;
+  if (!data) return <Loading label="Loading artifact…" />;
 
   return (
     <section className="card">

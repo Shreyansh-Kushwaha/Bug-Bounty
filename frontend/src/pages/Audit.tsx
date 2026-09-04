@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, AuditEntry, fmtUtc } from "../lib/api";
+import { Loading, ErrorBanner } from "../components/states";
 
 type AuditData = {
   entries: AuditEntry[];
@@ -16,8 +17,8 @@ export default function Audit() {
     api.audit(200).then(setData).catch((e) => setError(String(e)));
   }, []);
 
-  if (error) return <div className="card text-bad">{error}</div>;
-  if (!data) return <div className="card">Loading…</div>;
+  if (error) return <ErrorBanner message={error} />;
+  if (!data) return <Loading label="Loading audit log…" />;
 
   return (
     <section className="card">

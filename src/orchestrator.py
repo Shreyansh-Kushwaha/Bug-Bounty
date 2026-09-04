@@ -76,6 +76,7 @@ class RunContext:
     top_n: int = 1
     parallel: bool = False
     gate_callback: GateCallback | None = None
+    cancel_check: Callable[[], bool] | None = None
     recon: ReconOutput | None = None
     analyst: AnalystOutput | None = None
     exploits: dict[str, ExploitOutput] = field(default_factory=dict)
@@ -91,6 +92,17 @@ def _write(ctx: RunContext, name: str, data: dict) -> Path:
     path = ctx.artifact_dir / f"{name}.json"
     path.write_text(json.dumps(data, indent=2, default=str))
     return path
+
+
+class RunCancelled(Exception):
+    """Raised at a stage boundary when the run has been cancelled."""
+
+
+def _check_cancel(ctx: RunContext) -> None:
+    if ctx.cancel_check is not None and ctx.cancel_check():
+        ctx.audit.append("run.cancel", {"run_id": ctx.run_id})
+        console.print("[yellow]Run cancelled — stopping at stage boundary.[/]")
+        raise RunCancelled()
 
 
 def _confirm(ctx: RunContext, gate_name: str, prompt: str) -> bool:
@@ -136,6 +148,7 @@ def new_run_context(
     cache_dir: Path | None = None,
     run_id: str | None = None,
     gate_callback: GateCallback | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> RunContext:
     run_id = run_id or f"{target['name']}_{int(time.time())}"
     artifact_dir = findings_dir / run_id
@@ -153,6 +166,7 @@ def new_run_context(
         top_n=max(1, top_n),
         parallel=parallel,
         gate_callback=gate_callback,
+        cancel_check=cancel_check,
     )
 
 
@@ -227,6 +241,8 @@ def run_pipeline(ctx: RunContext, stop_after: str | None = None, resume: bool = 
     if stop_after == "recon":
         return _finish(ctx, exploit_validated=None)
 
+    _check_cancel(ctx)
+
     # --- Analyst ---
     cached_analyst = _load_artifact(ctx, "02_analyst") if resume else None
     if cached_analyst:
@@ -257,6 +273,7 @@ def run_pipeline(ctx: RunContext, stop_after: str | None = None, resume: bool = 
 
 
 def _exploit_onward(ctx: RunContext, stop_after: str | None) -> None:
+    _check_cancel(ctx)
     analyst = ctx.analyst
     if analyst is None or not analyst.hypotheses:
         console.print("[yellow]No hypotheses produced — stopping.[/]")
@@ -306,6 +323,8 @@ def _exploit_onward(ctx: RunContext, stop_after: str | None) -> None:
     if not proceed:
         console.print("[yellow]No PoC validated. Skipping patch and report.[/]")
         return _finish(ctx, exploit_validated=False)
+
+    _check_cancel(ctx)
 
     if not _confirm(
         ctx, "patch_report",

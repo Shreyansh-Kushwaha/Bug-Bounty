@@ -1,16 +1,20 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { Check, Pause, X, FileDown, MessageSquare } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { Check, Pause, X, FileDown, MessageSquare, StopCircle, RotateCcw } from "lucide-react";
 import { api, fmtUtc, RunDetail as TRunDetail } from "../lib/api";
 import { usePoll } from "../hooks/usePoll";
+import { useToast } from "../hooks/useToast";
 import StageChip from "../components/StageChip";
 import ScoreCard from "../components/ScoreCard";
+import { Loading, ErrorBanner } from "../components/states";
 
 const STAGES = ["recon", "analyst", "exploit", "patch", "report"];
 const TERMINAL = new Set(["done", "error", "aborted"]);
 
 export default function RunDetail() {
   const { runId = "" } = useParams();
+  const nav = useNavigate();
+  const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
 
   const { data, error } = usePoll<TRunDetail>(
@@ -20,21 +24,49 @@ export default function RunDetail() {
     (d) => TERMINAL.has(d.status.current_stage),
   );
 
-  if (error) return <div className="card text-bad">Error: {error}</div>;
-  if (!data) return <div className="card">Loading…</div>;
+  if (error) return <ErrorBanner message={error} />;
+  if (!data) return <Loading label="Loading run…" />;
 
   const { status, artifacts, log, tokens } = data;
   const idx = STAGES.indexOf(status.current_stage);
   const hasScore = artifacts.includes("06_score.json");
   const hasReportMd = artifacts.some((a) => /^05_report_.*\.md$/.test(a) && !a.endsWith("_eli5.md"));
 
+  const isActive = !TERMINAL.has(status.current_stage);
+
   async function decide(decision: "approve" | "abort") {
     if (!status.pending_gate) return;
     setBusy(decision);
     try {
       await api.decideGate(runId, status.pending_gate, decision);
+      toast.push(decision === "approve" ? "Gate approved" : "Gate aborted");
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast.push(e instanceof Error ? e.message : String(e), "bad");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function cancel() {
+    setBusy("cancel");
+    try {
+      await api.cancelRun(runId);
+      toast.push("Cancellation requested");
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : String(e), "bad");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function resume() {
+    setBusy("resume");
+    try {
+      const res = await api.resumeRun(runId);
+      toast.push("Resuming run");
+      nav(`/runs/${res.run_id}`);
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : String(e), "bad");
     } finally {
       setBusy(null);
     }
@@ -56,6 +88,25 @@ export default function RunDetail() {
         <StageChip stage={status.current_stage} />
         {status.auto_approve && <span className="pill">auto-approve</span>}
         {status.finished_at && <span className="text-fg-dim">finished {fmtUtc(status.finished_at)}</span>}
+        <span className="flex-1" />
+        {isActive && !status.pending_gate && (
+          <button
+            onClick={cancel}
+            disabled={busy === "cancel"}
+            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-bad/40 text-bad hover:bg-bad-soft disabled:opacity-50"
+          >
+            <StopCircle size={14} /> {busy === "cancel" ? "Cancelling…" : "Cancel run"}
+          </button>
+        )}
+        {(status.current_stage === "error" || status.current_stage === "aborted") && (
+          <button
+            onClick={resume}
+            disabled={busy === "resume"}
+            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-border text-fg-muted hover:bg-bg-soft hover:text-fg disabled:opacity-50"
+          >
+            <RotateCcw size={14} /> {busy === "resume" ? "Resuming…" : "Resume from last stage"}
+          </button>
+        )}
       </div>
 
       {status.error && <pre className="code text-bad bg-bad-soft border-bad/40">{status.error}</pre>}

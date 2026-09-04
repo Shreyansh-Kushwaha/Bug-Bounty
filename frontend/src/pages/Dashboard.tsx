@@ -4,9 +4,12 @@ import { api, fmtUtc, QuotaRow, RunStatus, Target } from "../lib/api";
 import StageChip from "../components/StageChip";
 import ScoreCard from "../components/ScoreCard";
 import { Field, SectionHead } from "../components/ui";
+import { EmptyState, ErrorBanner } from "../components/states";
+import { useToast } from "../hooks/useToast";
 
 export default function Dashboard() {
   const nav = useNavigate();
+  const toast = useToast();
   const [targets, setTargets] = useState<Target[]>([]);
   const [runs, setRuns] = useState<RunStatus[]>([]);
   const [quota, setQuota] = useState<QuotaRow[]>([]);
@@ -45,6 +48,7 @@ export default function Dashboard() {
         notes: String(form.get("notes") || ""),
         auto_approve: form.get("auto_approve") === "yes",
       });
+      toast.push("Run started");
       nav(`/runs/${res.run_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -63,11 +67,7 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {error && (
-        <div className="card mb-4 bg-bad-soft border-bad text-bad">
-          {error}
-        </div>
-      )}
+      {error && <div className="mb-4"><ErrorBanner message={error} /></div>}
 
       <section className="card mb-5">
         <form onSubmit={onSubmit} className="grid gap-4">
@@ -131,8 +131,11 @@ export default function Dashboard() {
         <ScoreCard />
       </section>
 
-      <section className="card mb-5">
-        <SectionHead title="Today's LLM usage" hint="UTC" />
+      <details className="card mb-5">
+        <summary className="cursor-pointer font-semibold text-fg select-none">
+          Today's LLM usage <span className="text-xs font-normal text-fg-dim ml-1">UTC</span>
+        </summary>
+        <div className="mt-3" />
         {quota.length === 0 ? (
           <p className="text-fg-dim">No usage recorded yet today.</p>
         ) : (
@@ -170,7 +173,7 @@ export default function Dashboard() {
             </table>
           </div>
         )}
-      </section>
+      </details>
 
       <section className="card mb-5">
         <SectionHead
@@ -178,7 +181,7 @@ export default function Dashboard() {
           right={<Link to="/findings" className="btn btn-ghost text-sm py-1.5 px-3">Browse findings →</Link>}
         />
         {runs.length === 0 ? (
-          <p className="text-fg-dim">No runs yet.</p>
+          <EmptyState title="No runs yet" hint="Start one with the form above to see live progress here." />
         ) : (
           <div className="overflow-x-auto">
             <table className="data-table">
@@ -201,9 +204,11 @@ export default function Dashboard() {
         )}
       </section>
 
-      <section className="card">
-        <SectionHead title="Authorized targets" />
-        <div className="overflow-x-auto">
+      <details className="card">
+        <summary className="cursor-pointer font-semibold text-fg select-none">
+          Authorized targets <span className="text-xs font-normal text-fg-dim ml-1">{targets.length}</span>
+        </summary>
+        <div className="overflow-x-auto mt-3">
           <table className="data-table">
             <thead>
               <tr><th>Name</th><th>Repo</th><th>Ref</th><th>Category</th><th>Notes</th></tr>
@@ -221,7 +226,7 @@ export default function Dashboard() {
             </tbody>
           </table>
         </div>
-      </section>
+      </details>
     </>
   );
 }

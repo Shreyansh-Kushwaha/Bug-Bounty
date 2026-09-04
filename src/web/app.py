@@ -426,6 +426,44 @@ def api_gate(run_id: str, payload: dict):
     return {"ok": True}
 
 
+@app.post("/api/runs/{run_id}/cancel")
+def api_cancel(run_id: str):
+    _validate_run_id(run_id)
+    if not manager.cancel(run_id):
+        raise HTTPException(409, "Run is not cancellable (unknown or already finished)")
+    return {"ok": True}
+
+
+@app.post("/api/runs/{run_id}/resume")
+def api_resume(run_id: str, payload: dict | None = None):
+    _validate_run_id(run_id)
+    payload = payload or {}
+    target_name = run_id.rsplit("_", 1)[0]
+    target = _resolve_target_name(target_name)
+    if target is None:
+        raise HTTPException(404, f"No known target for run {run_id}")
+    if not (FINDINGS_DIR / run_id).is_dir():
+        raise HTTPException(404, "No artifacts to resume from")
+    stop = payload.get("stop_after") or ""
+    stop = stop if stop in ("recon", "analyst", "exploit", "patch") else None
+    new_id = manager.resume(
+        target, run_id=run_id, stop_after=stop,
+        auto_approve=bool(payload.get("auto_approve")),
+    )
+    return {"run_id": new_id}
+
+
+@app.get("/api/triage")
+def api_triage():
+    store = FindingsStore(DB_PATH)
+    try:
+        groups = store.duplicates()
+        total = len(store.list_findings())
+    finally:
+        store.close()
+    return {"total": total, "duplicates": groups}
+
+
 @app.get("/api/runs/{run_id}/artifact/{name}")
 def api_artifact(run_id: str, name: str):
     _validate_run_id(run_id)

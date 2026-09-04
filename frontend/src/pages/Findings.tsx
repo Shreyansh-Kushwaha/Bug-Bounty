@@ -1,17 +1,23 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, Finding } from "../lib/api";
+import { api, DuplicateGroup, Finding } from "../lib/api";
 import { SevChip } from "../components/StageChip";
+import { EmptyState, ErrorBanner } from "../components/states";
 
 export default function Findings() {
   const [params, setParams] = useSearchParams();
   const target = params.get("target");
   const [rows, setRows] = useState<Finding[]>([]);
+  const [dupes, setDupes] = useState<DuplicateGroup[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.findings(target).then((r) => setRows(r.findings)).catch((e) => setError(String(e)));
   }, [target]);
+
+  useEffect(() => {
+    api.triage().then((r) => setDupes(r.duplicates)).catch(() => setDupes([]));
+  }, []);
 
   function onFilter(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -32,10 +38,29 @@ export default function Findings() {
         {target && <Link to="/findings" className="btn btn-ghost">Clear</Link>}
       </form>
 
-      {error && <div className="text-bad">{error}</div>}
+      {error && <div className="mb-4"><ErrorBanner message={error} /></div>}
+
+      {dupes.length > 0 && (
+        <div className="mb-5 rounded-xl border border-warn/40 bg-warn-soft p-4">
+          <div className="font-semibold text-fg mb-2">
+            {dupes.length} duplicate finding group{dupes.length === 1 ? "" : "s"} across runs
+          </div>
+          <ul className="grid gap-2 m-0 p-0 list-none">
+            {dupes.map((g) => (
+              <li key={g.dedupe_key} className="text-sm flex items-center gap-2 flex-wrap">
+                <span className="pill">{g.count}×</span>
+                <code className="text-xs">{g.dedupe_key}</code>
+                <span className="text-fg-dim">
+                  {g.findings.map((f) => f.run_id).join(", ")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {rows.length === 0 ? (
-        <p className="text-fg-dim">No findings yet.</p>
+        <EmptyState title="No findings yet" hint="Findings appear here once a run reaches the exploit stage." />
       ) : (
         <div className="overflow-x-auto">
           <table className="data-table">

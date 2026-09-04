@@ -55,6 +55,12 @@ export type Finding = {
   title?: string | null;
 };
 
+export type DuplicateGroup = {
+  dedupe_key: string;
+  count: number;
+  findings: Finding[];
+};
+
 export type AuditEntry = {
   ts: number;
   event: string;
@@ -186,6 +192,9 @@ export const api = {
   }) => jpost<{ run_id: string }>("/api/runs", payload),
   decideGate: (id: string, gate: string, decision: "approve" | "abort") =>
     jpost<{ ok: boolean }>(`/api/runs/${encodeURIComponent(id)}/gate`, { gate, decision }),
+  cancelRun: (id: string) => jpost<{ ok: boolean }>(`/api/runs/${encodeURIComponent(id)}/cancel`, {}),
+  resumeRun: (id: string) => jpost<{ run_id: string }>(`/api/runs/${encodeURIComponent(id)}/resume`, {}),
+  triage: () => jget<{ total: number; duplicates: DuplicateGroup[] }>("/api/triage"),
   score: (runId?: string) =>
     jget<ScoreResponse>(runId ? `/api/score?run_id=${encodeURIComponent(runId)}` : "/api/score"),
   chat: (question: string, runId?: string | null) =>
