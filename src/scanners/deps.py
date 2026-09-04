@@ -107,12 +107,100 @@ def _run_osv(root: Path) -> list[dict]:
 
 
 def _osv_severity(vuln: dict) -> str:
-    for s in vuln.get("severity", []) or []:
-        score = s.get("score", "")
-        if score:
-            return score
+    """Normalize an OSV vuln to a severity band: critical|high|medium|low|unknown.
+
+    OSV's `severity[].score` is a CVSS *vector string* for CVSS types (not a
+    number), so the old code returned that vector verbatim and every consumer
+    treated it as 'unknown'. Prefer an explicit band from database_specific,
+    otherwise derive one from the CVSS vector's computed base score.
+    """
     db = vuln.get("database_specific") or {}
-    return str(db.get("severity") or "unknown")
+    band = _band_word(db.get("severity"))
+    if band != "unknown":
+        return band
+    for s in vuln.get("severity", []) or []:
+        band = _cvss_to_band(str(s.get("score", "")))
+        if band != "unknown":
+            return band
+    return "unknown"
+
+
+def _band_word(value) -> str:
+    w = str(value or "").strip().lower()
+    if w in ("critical", "high", "low"):
+        return w
+    if w in ("medium", "moderate"):
+        return "medium"
+    return "unknown"
+
+
+def _score_to_band(score: float) -> str:
+    if score >= 9.0:
+        return "critical"
+    if score >= 7.0:
+        return "high"
+    if score >= 4.0:
+        return "medium"
+    if score > 0.0:
+        return "low"
+    return "unknown"
+
+
+def _cvss_to_band(score: str) -> str:
+    """Accept either a numeric base score ('9.8') or a CVSS v3.x vector string."""
+    score = score.strip()
+    if not score:
+        return "unknown"
+    try:
+        return _score_to_band(float(score))
+    except ValueError:
+        pass
+    if score.upper().startswith("CVSS:3"):
+        base = _cvss3_base_score(score)
+        if base is not None:
+            return _score_to_band(base)
+    return "unknown"
+
+
+# CVSS v3.1 base-score metric weights.
+_AV = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2}
+_AC = {"L": 0.77, "H": 0.44}
+_UI = {"N": 0.85, "R": 0.62}
+_CIA = {"H": 0.56, "L": 0.22, "N": 0.0}
+_PR_U = {"N": 0.85, "L": 0.62, "H": 0.27}
+_PR_C = {"N": 0.85, "L": 0.68, "H": 0.5}
+
+
+def _cvss3_base_score(vector: str) -> float | None:
+    """Compute a CVSS v3.1 base score from a vector string. None if malformed."""
+    try:
+        parts = dict(
+            p.split(":", 1) for p in vector.split("/") if ":" in p and not p.startswith("CVSS")
+        )
+        av, ac, ui = _AV[parts["AV"]], _AC[parts["AC"]], _UI[parts["UI"]]
+        scope_changed = parts["S"] == "C"
+        pr = (_PR_C if scope_changed else _PR_U)[parts["PR"]]
+        c, i, a = _CIA[parts["C"]], _CIA[parts["I"]], _CIA[parts["A"]]
+    except (KeyError, ValueError):
+        return None
+
+    iss = 1 - (1 - c) * (1 - i) * (1 - a)
+    if scope_changed:
+        impact = 7.52 * (iss - 0.029) - 3.25 * (iss - 0.02) ** 15
+    else:
+        impact = 6.42 * iss
+    if impact <= 0:
+        return 0.0
+    exploitability = 8.22 * av * ac * pr * ui
+    raw = (1.08 if scope_changed else 1.0) * (impact + exploitability)
+    return _roundup(min(raw, 10.0))
+
+
+def _roundup(x: float) -> float:
+    """CVSS 'roundup': smallest 1-decimal number >= x."""
+    import math
+
+    return math.ceil(x * 10) / 10.0
 
 
 def _osv_fixed(vuln: dict) -> str:

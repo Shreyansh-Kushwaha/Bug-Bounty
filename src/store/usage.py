@@ -9,6 +9,7 @@ Queries:
 from __future__ import annotations
 
 import sqlite3
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,8 +41,12 @@ class UsageStore:
     def __init__(self, db_path: Path):
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
-        self.conn.executescript(SCHEMA)
-        self.conn.commit()
+        # Usage rows are written from parallel worker threads (--parallel) via a
+        # single shared connection, so every access must be serialized.
+        self._lock = threading.Lock()
+        with self._lock:
+            self.conn.executescript(SCHEMA)
+            self.conn.commit()
 
     def record(
         self,
@@ -53,38 +58,40 @@ class UsageStore:
         completion_tokens: int,
         total_tokens: int,
     ) -> None:
-        self.conn.execute(
-            """INSERT INTO llm_usage
-               (ts, run_id, provider, model,
-                prompt_tokens, completion_tokens, total_tokens)
-               VALUES (?,?,?,?,?,?,?)""",
-            (
-                time.time(), run_id, provider, model,
-                prompt_tokens, completion_tokens, total_tokens,
-            ),
-        )
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute(
+                """INSERT INTO llm_usage
+                   (ts, run_id, provider, model,
+                    prompt_tokens, completion_tokens, total_tokens)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (
+                    time.time(), run_id, provider, model,
+                    prompt_tokens, completion_tokens, total_tokens,
+                ),
+            )
+            self.conn.commit()
 
     def run_totals(self, run_id: str) -> dict:
         """Return {total, prompt, completion, calls, by_model: [{model, calls, total}]}."""
-        cur = self.conn.execute(
-            """SELECT COUNT(*),
-                      COALESCE(SUM(prompt_tokens),0),
-                      COALESCE(SUM(completion_tokens),0),
-                      COALESCE(SUM(total_tokens),0)
-               FROM llm_usage WHERE run_id = ?""",
-            (run_id,),
-        )
-        calls, prompt, completion, total = cur.fetchone()
-        cur = self.conn.execute(
-            """SELECT model, COUNT(*), COALESCE(SUM(total_tokens),0)
-               FROM llm_usage WHERE run_id = ?
-               GROUP BY model ORDER BY 3 DESC""",
-            (run_id,),
-        )
-        by_model = [
-            {"model": m, "calls": c, "total": t} for m, c, t in cur.fetchall()
-        ]
+        with self._lock:
+            cur = self.conn.execute(
+                """SELECT COUNT(*),
+                          COALESCE(SUM(prompt_tokens),0),
+                          COALESCE(SUM(completion_tokens),0),
+                          COALESCE(SUM(total_tokens),0)
+                   FROM llm_usage WHERE run_id = ?""",
+                (run_id,),
+            )
+            calls, prompt, completion, total = cur.fetchone()
+            cur = self.conn.execute(
+                """SELECT model, COUNT(*), COALESCE(SUM(total_tokens),0)
+                   FROM llm_usage WHERE run_id = ?
+                   GROUP BY model ORDER BY 3 DESC""",
+                (run_id,),
+            )
+            by_model = [
+                {"model": m, "calls": c, "total": t} for m, c, t in cur.fetchall()
+            ]
         return {
             "calls": calls,
             "prompt": prompt,
@@ -96,22 +103,24 @@ class UsageStore:
     def today_by_model(self) -> list[dict]:
         """Per-model request count + tokens since start of current UTC day."""
         start = _start_of_utc_day()
-        cur = self.conn.execute(
-            """SELECT model,
-                      COUNT(*),
-                      COALESCE(SUM(prompt_tokens),0),
-                      COALESCE(SUM(completion_tokens),0),
-                      COALESCE(SUM(total_tokens),0)
-               FROM llm_usage WHERE ts >= ?
-               GROUP BY model ORDER BY 2 DESC""",
-            (start,),
-        )
+        with self._lock:
+            cur = self.conn.execute(
+                """SELECT model,
+                          COUNT(*),
+                          COALESCE(SUM(prompt_tokens),0),
+                          COALESCE(SUM(completion_tokens),0),
+                          COALESCE(SUM(total_tokens),0)
+                   FROM llm_usage WHERE ts >= ?
+                   GROUP BY model ORDER BY 2 DESC""",
+                (start,),
+            )
+            rows = cur.fetchall()
         return [
             {
                 "model": m, "calls": c,
                 "prompt": p, "completion": comp, "total": t,
             }
-            for m, c, p, comp, t in cur.fetchall()
+            for m, c, p, comp, t in rows
         ]
 
     def close(self) -> None:

@@ -90,8 +90,11 @@ def build_context(*, findings_dir: Path, db_path: Path, run_id: str | None) -> d
             "by_severity": deps.get("by_severity"),
             "scanners_run": deps.get("scanners_run"),
         }
-    # Latest report markdown (any 05_report_*.md).
-    md_candidates = sorted(run_dir.glob("05_report_*.md"))
+    # Latest technical report markdown. Exclude the ELI5 variant so the model
+    # is grounded in the full report, not the plain-English summary.
+    md_candidates = sorted(
+        p for p in run_dir.glob("05_report_*.md") if not p.name.endswith("_eli5.md")
+    )
     if md_candidates:
         ctx["report"] = _read_text(md_candidates[-1])
     return ctx

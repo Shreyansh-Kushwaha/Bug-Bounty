@@ -440,10 +440,21 @@ class ResponseCache:
             cached=True,
         )
 
-    def put(self, system: str | None, prompt: str, resp: LLMResponse) -> None:
+    def put(
+        self,
+        system: str | None,
+        prompt: str,
+        resp: LLMResponse,
+        model: str | None = None,
+    ) -> None:
         if self.dir is None:
             return
-        path = self.dir / f"{self._key(resp.provider, resp.model, system, prompt)}.json"
+        # Key the write on the SAME model identity that `get` will look up
+        # (the tier's requested model), not the model that actually answered.
+        # Otherwise a response served by a fallback model is stored under a key
+        # no future lookup ever computes, and the cache silently never hits.
+        key_model = model or resp.model
+        path = self.dir / f"{self._key(resp.provider, key_model, system, prompt)}.json"
         path.write_text(json.dumps({
             "text": resp.text, "provider": resp.provider, "model": resp.model,
             "usage": {
@@ -519,7 +530,7 @@ class ModelRouter:
                 try:
                     resp = provider.call(prompt, system, tier)
                     if self.cache is not None:
-                        self.cache.put(system, prompt, resp)
+                        self.cache.put(system, prompt, resp, model=model_name)
                     self._account(resp)
                     return resp
                 except Exception as e:  # noqa: BLE001 — intentionally broad for failover
