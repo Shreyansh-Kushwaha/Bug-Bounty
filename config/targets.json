@@ -40,22 +40,6 @@
       "known_cve": null,
       "category": "attested",
       "notes": "Attested by Shreyansh at 2026-04-22 16:58:37 UTC. personal E-comercse websie"
-    },
-    {
-      "name": "memegenerator",
-      "repo": "https://github.com/avinash201199/MemeGenerator.git",
-      "ref": "main",
-      "known_cve": null,
-      "category": "attested",
-      "notes": "Attested by avinash at 2026-04-22 17:33:51 UTC."
-    },
-    {
-      "name": "studynotion-edtech-platform",
-      "repo": "https://github.com/Abhinav-Sharma06/StudyNotion---Edtech-Platform.git",
-      "ref": "main",
-      "known_cve": null,
-      "category": "attested",
-      "notes": "Attested by abhinav at 2026-04-22 17:40:35 UTC."
     }
   ],
   "bounty_programs": [

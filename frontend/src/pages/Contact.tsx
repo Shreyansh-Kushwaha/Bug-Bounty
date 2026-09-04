@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { Field, PageHeader } from "../components/ui";
+import { PageHeader } from "../components/ui";
+
+const GITHUB = "https://github.com/Shreyansh-Kushwaha/Bug-Bounty";
 
 const faqs = [
   { q: "How do I add my repo to the allowlist?",
@@ -25,25 +27,22 @@ export default function Contact() {
 
       <div className="grid lg:grid-cols-3 gap-5">
         <section className="card lg:col-span-2">
-          <h2 className="text-lg font-semibold mb-3 text-fg">Send a message</h2>
-          <form method="get" action="mailto:hello@example.com" className="grid gap-4">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="Your name"><input name="name" required className="input" /></Field>
-              <Field label="Email"><input type="email" name="email" required className="input" /></Field>
-            </div>
-            <Field label="Subject">
-              <input name="subject" placeholder="e.g. Add my OSS repo to the allowlist" className="input" />
-            </Field>
-            <Field label="Message">
-              <textarea name="body" required rows={6} className="input"
-                placeholder="Tell us a bit about the repo and your authorization to test it…" />
-            </Field>
-            <div>
-              <button type="submit" className="btn">Send via email</button>
-            </div>
-          </form>
-          <p className="text-xs mt-3 text-fg-dim">
-            This form opens your default mail client. We never store form data on this server.
+          <h2 className="text-lg font-semibold mb-3 text-fg">Open an issue or discussion</h2>
+          <p className="text-sm text-fg-muted mb-4">
+            The fastest way to reach the maintainer is on GitHub. Questions, target
+            nominations, and bug reports all live in the repository.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <a href={`${GITHUB}/issues/new`} target="_blank" rel="noopener noreferrer" className="btn">
+              New issue on GitHub
+            </a>
+            <a href={`${GITHUB}/discussions`} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">
+              Start a discussion
+            </a>
+          </div>
+          <p className="text-xs mt-4 text-fg-dim">
+            For a security disclosure, please open a private security advisory in the
+            repository rather than a public issue.
           </p>
         </section>
 
@@ -51,21 +50,20 @@ export default function Contact() {
           <h2 className="text-lg font-semibold mb-3 text-fg">Other ways</h2>
           <ul className="m-0 p-0 list-none grid gap-3">
             <li>
-              <Sub>Email</Sub>
-              <a href="mailto:hello@example.com">hello@example.com</a>
-            </li>
-            <li>
               <Sub>GitHub</Sub>
-              <a href="https://github.com/" rel="noopener">github.com/your-org</a>
+              <a href={GITHUB} target="_blank" rel="noopener noreferrer">github.com/Shreyansh-Kushwaha</a>
             </li>
             <li>
-              <Sub>Disclosure</Sub>
-              <a href="mailto:security@example.com">security@example.com</a>
+              <Sub>Security disclosure</Sub>
+              <a href={`${GITHUB}/security/advisories/new`} target="_blank" rel="noopener noreferrer">
+                Private advisory
+              </a>
             </li>
           </ul>
           <h3 className="mt-5 mb-1 text-base font-semibold text-fg">Response time</h3>
           <p className="text-sm text-fg-muted">
-            Typically within two business days. For urgent disclosure issues, prefix the subject with <code>[urgent]</code>.
+            This is a personal research project, so replies are best-effort. Security
+            reports are prioritized.
           </p>
         </aside>
       </div>

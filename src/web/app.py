@@ -96,13 +96,30 @@ manager = RunManager(
     db_path=DB_PATH,
 )
 
+from src.store.targets import TargetsStore  # noqa: E402
+targets_store = TargetsStore(DB_PATH)
+
+
+def _all_targets() -> list[dict]:
+    """Seed allowlist (config JSON) merged with web-attested targets (DB)."""
+    seed = _load_targets()["authorized_targets"]
+    seen = {t["repo"] for t in seed}
+    merged = list(seed)
+    for t in targets_store.list():
+        if t["repo"] not in seen:
+            merged.append(t)
+    return merged
+
+
+def _resolve_target_name(name: str) -> dict | None:
+    for t in _load_targets()["authorized_targets"]:
+        if t["name"] == name:
+            return t
+    return targets_store.get_by_name(name)
+
 
 def _load_targets() -> dict:
     return json.loads(TARGETS_FILE.read_text())
-
-
-def _save_targets(data: dict) -> None:
-    TARGETS_FILE.write_text(json.dumps(data, indent=2) + "\n")
 
 
 def _slug(s: str) -> str:
@@ -319,8 +336,7 @@ def serve_spa(full_path: str = ""):
 
 @app.get("/api/targets")
 def api_targets():
-    data = _load_targets()
-    return {"targets": data["authorized_targets"]}
+    return {"targets": _all_targets()}
 
 
 @app.get("/api/quota")
@@ -354,29 +370,24 @@ def api_create_run(payload: dict):
     if not attested:
         raise HTTPException(400, "Attestation required")
 
+    # Seed allowlist (static JSON) first, then previously-attested targets (DB).
     data = _load_targets()
-    target = next(
-        (t for t in data["authorized_targets"] if t["repo"] == repo_url),
-        None,
-    )
+    seed = {t["repo"]: t for t in data["authorized_targets"]}
+    target = seed.get(repo_url) or targets_store.get_by_repo(repo_url)
     if target is None:
         base = _repo_name_from_url(repo_url)
-        used = {t["name"] for t in data["authorized_targets"]}
+        used_names = {t["name"] for t in data["authorized_targets"]} | targets_store.names()
         name, i = base, 2
-        while name in used:
+        while name in used_names:
             name = f"{base}-{i}"
             i += 1
-        target = {
-            "name": name,
-            "repo": repo_url,
-            "ref": ref,
-            "known_cve": None,
-            "category": "attested",
-            "notes": f"Attested by {attested_by or 'api-user'} at {_iso_utc(time.time())}."
-            + (f" {notes}" if notes else ""),
-        }
-        data["authorized_targets"].append(target)
-        _save_targets(data)
+        # Persist the attestation to the DB — never mutate config/targets.json.
+        target = targets_store.add(
+            name=name, repo=repo_url, ref=ref, category="attested",
+            notes=(f"Attested by {attested_by or 'api-user'} at {_iso_utc(time.time())}."
+                   + (f" {notes}" if notes else "")),
+            attested_by=attested_by or "api-user",
+        )
 
     stop = stop_after if stop_after in ("recon", "analyst", "exploit", "patch") else None
     run_id = manager.start(target, stop_after=stop, auto_approve=auto_approve)
@@ -478,8 +489,7 @@ def api_run_report_pdf(run_id: str):
         target_name = run_id.rsplit("_", 1)[0]
         repo_url = ""
         try:
-            data = _load_targets()
-            t = next((x for x in data["authorized_targets"] if x["name"] == target_name), None)
+            t = _resolve_target_name(target_name)
             if t:
                 repo_url = t["repo"]
         except Exception:  # noqa: BLE001
