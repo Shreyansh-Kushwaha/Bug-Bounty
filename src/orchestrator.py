@@ -433,10 +433,18 @@ def _patch_verify_report(ctx: RunContext, h: Hypothesis, stop_after: str | None)
     exploit_out = ctx.exploits[h.id]
     source = _read_source_for(ctx.clone_dir, h.file)
 
-    # Patch
-    patch = PatchAgent(ctx.router).run(PatchInput(
-        hypothesis=h, exploit=exploit_out, clone_dir=ctx.clone_dir, source_context=source,
-    ))
+    # Patch. A model can refuse or return unparseable output here too — record
+    # the finding with the exploit only and move on rather than failing the run.
+    try:
+        patch = PatchAgent(ctx.router).run(PatchInput(
+            hypothesis=h, exploit=exploit_out, clone_dir=ctx.clone_dir, source_context=source,
+        ))
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[yellow]{h.id}: patch generation failed ({type(e).__name__}). "
+                      f"Recording finding without a patch.[/]")
+        ctx.audit.append("patch.failed", {"id": h.id, "error": str(e)[:200]})
+        _record_finding(ctx, h, exploit_out, None, None)
+        return
 
     # Verify
     verif = verify_patch(
@@ -460,10 +468,17 @@ def _patch_verify_report(ctx: RunContext, h: Hypothesis, stop_after: str | None)
         return
 
     # Report
-    report = ReportAgent(ctx.router).run(ReportInput(
-        target=ctx.target["name"], repo_url=ctx.target["repo"],
-        hypothesis=h, exploit=exploit_out, patch=patch,
-    ))
+    try:
+        report = ReportAgent(ctx.router).run(ReportInput(
+            target=ctx.target["name"], repo_url=ctx.target["repo"],
+            hypothesis=h, exploit=exploit_out, patch=patch,
+        ))
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[yellow]{h.id}: report generation failed ({type(e).__name__}). "
+                      f"Recording finding with patch but no report.[/]")
+        ctx.audit.append("report.failed", {"id": h.id, "error": str(e)[:200]})
+        _record_finding(ctx, h, exploit_out, patch, None)
+        return
     ctx.reports[h.id] = report
     _write(ctx, f"05_report_{h.id}", report.model_dump())
     (ctx.artifact_dir / f"05_report_{h.id}.md").write_text(report.markdown)
