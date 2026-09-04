@@ -15,6 +15,7 @@ export default function Dashboard() {
   const [quota, setQuota] = useState<QuotaRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"full" | "diff">("full");
 
   const refresh = async () => {
     try {
@@ -47,6 +48,12 @@ export default function Dashboard() {
         attested_by: String(form.get("attested_by") || ""),
         notes: String(form.get("notes") || ""),
         auto_approve: form.get("auto_approve") === "yes",
+        ...(mode === "diff"
+          ? {
+              base_ref: String(form.get("base_ref") || ""),
+              head_ref: String(form.get("head_ref") || ""),
+            }
+          : {}),
       });
       toast.push("Run started");
       nav(`/runs/${res.run_id}`);
@@ -76,8 +83,15 @@ export default function Dashboard() {
           </Field>
 
           <div className="grid sm:grid-cols-2 gap-4">
-            <Field label="Ref (branch / tag / commit)">
-              <input type="text" name="ref" defaultValue="main" className="input" />
+            <Field label="Scan mode">
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as "full" | "diff")}
+                className="input"
+              >
+                <option value="full">Full repository</option>
+                <option value="diff">Diff only (changed files between two refs)</option>
+              </select>
             </Field>
             <Field label="Stop after">
               <select name="stop_after" defaultValue="" className="input">
@@ -89,6 +103,21 @@ export default function Dashboard() {
               </select>
             </Field>
           </div>
+
+          {mode === "full" ? (
+            <Field label="Ref (branch / tag / commit)">
+              <input type="text" name="ref" defaultValue="main" className="input" />
+            </Field>
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-4">
+              <Field label="Base ref (before)">
+                <input type="text" name="base_ref" required placeholder="e.g. main" className="input" />
+              </Field>
+              <Field label="Head ref (after)">
+                <input type="text" name="head_ref" required placeholder="e.g. my-feature-branch" className="input" />
+              </Field>
+            </div>
+          )}
 
           <div className="grid sm:grid-cols-2 gap-4">
             <Field label="Your name / handle (for audit)">

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Check, Pause, X, FileDown, MessageSquare, StopCircle, RotateCcw } from "lucide-react";
-import { api, fmtUtc, RunDetail as TRunDetail } from "../lib/api";
-import { usePoll } from "../hooks/usePoll";
+import { api, fmtUtc } from "../lib/api";
+import { useRunStream } from "../hooks/useRunStream";
 import { useToast } from "../hooks/useToast";
 import StageChip from "../components/StageChip";
 import ScoreCard from "../components/ScoreCard";
@@ -17,14 +17,9 @@ export default function RunDetail() {
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
 
-  const { data, error } = usePoll<TRunDetail>(
-    () => api.run(runId),
-    2000,
-    [runId],
-    (d) => TERMINAL.has(d.status.current_stage),
-  );
+  const { data, error } = useRunStream(runId);
 
-  if (error) return <ErrorBanner message={error} />;
+  if (error && !data) return <ErrorBanner message={error} />;
   if (!data) return <Loading label="Loading run…" />;
 
   const { status, artifacts, log, tokens } = data;

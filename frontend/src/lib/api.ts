@@ -173,10 +173,18 @@ export const api = {
   run:     (id: string) => jget<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
   artifact: (id: string, name: string) =>
     jget<ArtifactPayload>(`/api/runs/${encodeURIComponent(id)}/artifact/${encodeURIComponent(name)}`),
-  findings: (target?: string | null) =>
-    jget<{ findings: Finding[]; target_filter: string | null }>(
-      target ? `/api/findings?target=${encodeURIComponent(target)}` : "/api/findings",
-    ),
+  findings: (target?: string | null, limit = 50, offset = 0) => {
+    const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (target) p.set("target", target);
+    return jget<{
+      findings: Finding[];
+      target_filter: string | null;
+      total: number;
+      limit: number;
+      offset: number;
+      has_more: boolean;
+    }>(`/api/findings?${p.toString()}`);
+  },
   audit: (limit = 200) =>
     jget<{ entries: AuditEntry[]; total: number; chain_ok: boolean; broken_line: number | null }>(
       `/api/audit?limit=${limit}`,
@@ -189,7 +197,10 @@ export const api = {
     attested_by?: string;
     notes?: string;
     auto_approve?: boolean;
+    base_ref?: string;
+    head_ref?: string;
   }) => jpost<{ run_id: string }>("/api/runs", payload),
+  eventsUrl: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/events`,
   decideGate: (id: string, gate: string, decision: "approve" | "abort") =>
     jpost<{ ok: boolean }>(`/api/runs/${encodeURIComponent(id)}/gate`, { gate, decision }),
   cancelRun: (id: string) => jpost<{ ok: boolean }>(`/api/runs/${encodeURIComponent(id)}/cancel`, {}),

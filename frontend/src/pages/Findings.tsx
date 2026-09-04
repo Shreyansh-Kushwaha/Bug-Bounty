@@ -7,17 +7,41 @@ import { EmptyState, ErrorBanner } from "../components/states";
 export default function Findings() {
   const [params, setParams] = useSearchParams();
   const target = params.get("target");
+  const PAGE = 50;
   const [rows, setRows] = useState<Finding[]>([]);
   const [dupes, setDupes] = useState<DuplicateGroup[]>([]);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.findings(target).then((r) => setRows(r.findings)).catch((e) => setError(String(e)));
+    api
+      .findings(target, PAGE, 0)
+      .then((r) => {
+        setRows(r.findings);
+        setTotal(r.total);
+        setHasMore(r.has_more);
+      })
+      .catch((e) => setError(String(e)));
   }, [target]);
 
   useEffect(() => {
     api.triage().then((r) => setDupes(r.duplicates)).catch(() => setDupes([]));
   }, []);
+
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const r = await api.findings(target, PAGE, rows.length);
+      setRows((prev) => [...prev, ...r.findings]);
+      setHasMore(r.has_more);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   function onFilter(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -29,6 +53,7 @@ export default function Findings() {
     <section className="card">
       <h1 className="text-2xl font-semibold mb-4 text-fg">
         Findings
+        {total > 0 && <span className="ml-2 text-sm font-normal text-fg-dim">· {total} total</span>}
         {target && <span className="ml-2 text-sm font-normal text-fg-dim">· filter: {target}</span>}
       </h1>
 
@@ -87,6 +112,14 @@ export default function Findings() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {hasMore && (
+        <div className="mt-4">
+          <button onClick={loadMore} disabled={loadingMore} className="btn btn-secondary">
+            {loadingMore ? "Loading…" : `Load more (${rows.length} of ${total})`}
+          </button>
         </div>
       )}
     </section>

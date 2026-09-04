@@ -390,6 +390,17 @@ def api_create_run(payload: dict):
         )
 
     stop = stop_after if stop_after in ("recon", "analyst", "exploit", "patch") else None
+
+    # Diff mode: analyze only files changed between two refs.
+    base_ref = (payload.get("base_ref") or "").strip()
+    head_ref = (payload.get("head_ref") or "").strip()
+    if base_ref and head_ref:
+        run_id = manager.start(
+            target, stop_after=stop, auto_approve=auto_approve,
+            diff=(base_ref, head_ref),
+        )
+        return {"run_id": run_id}
+
     run_id = manager.start(target, stop_after=stop, auto_approve=auto_approve)
     return {"run_id": run_id}
 
@@ -424,6 +435,44 @@ def api_gate(run_id: str, payload: dict):
     if not ok:
         raise HTTPException(409, f"No pending gate '{gate}' for run {run_id}")
     return {"ok": True}
+
+
+_TERMINAL_STAGES = {"done", "error", "aborted"}
+
+
+@app.get("/api/runs/{run_id}/events")
+def api_run_events(run_id: str):
+    """Server-Sent Events stream of status + log for a live run.
+
+    Emits a `data:` frame roughly once a second until the run reaches a terminal
+    stage, then closes. The React client falls back to polling if the stream
+    errors or the browser lacks EventSource.
+    """
+    from fastapi.responses import StreamingResponse
+
+    _validate_run_id(run_id)
+
+    def _gen():
+        deadline = time.time() + 2 * 3600  # hard stop after 2h
+        while time.time() < deadline:
+            status = manager.get(run_id)
+            if status is None:
+                yield 'data: {"error": "unknown run"}\n\n'
+                return
+            payload = {
+                "status": _status_to_dict(status),
+                "log": _clean_log(manager.log_tail(run_id)),
+            }
+            yield f"data: {json.dumps(payload, default=str)}\n\n"
+            if status.current_stage in _TERMINAL_STAGES:
+                return
+            time.sleep(1.0)
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/api/runs/{run_id}/cancel")
@@ -491,11 +540,23 @@ def api_artifact(run_id: str, name: str):
 
 
 @app.get("/api/findings")
-def api_findings(target: str | None = None):
+def api_findings(target: str | None = None, limit: int = 50, offset: int = 0):
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
     store = FindingsStore(DB_PATH)
-    rows = store.list_findings(target=target)
-    store.close()
-    return {"findings": rows, "target_filter": target}
+    try:
+        rows = store.list_findings(target=target, limit=limit, offset=offset)
+        total = store.count_findings(target=target)
+    finally:
+        store.close()
+    return {
+        "findings": rows,
+        "target_filter": target,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(rows) < total,
+    }
 
 
 @app.get("/api/runs/{run_id}/report.pdf")

@@ -104,16 +104,33 @@ class FindingsStore:
             self.conn.commit()
             return cur.lastrowid
 
-    def list_findings(self, target: str | None = None) -> list[dict]:
+    def list_findings(
+        self,
+        target: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[dict]:
         q = "SELECT * FROM findings"
+        params: list = []
+        if target:
+            q += " WHERE target = ?"
+            params.append(target)
+        q += " ORDER BY created_at DESC"
+        if limit is not None:
+            q += " LIMIT ? OFFSET ?"
+            params.extend([int(limit), int(offset)])
+        with self._lock:
+            cur = self.conn.execute(q, tuple(params))
+            return [dict(row) for row in cur.fetchall()]
+
+    def count_findings(self, target: str | None = None) -> int:
+        q = "SELECT COUNT(*) FROM findings"
         params: tuple = ()
         if target:
             q += " WHERE target = ?"
             params = (target,)
-        q += " ORDER BY created_at DESC"
         with self._lock:
-            cur = self.conn.execute(q, params)
-            return [dict(row) for row in cur.fetchall()]
+            return int(self.conn.execute(q, params).fetchone()[0])
 
     def duplicates(self) -> list[dict]:
         """Group findings by dedupe_key where more than one row shares the key."""

@@ -17,7 +17,7 @@ from io import StringIO
 from pathlib import Path
 
 from src.current_run import set_run_id
-from src.orchestrator import RunCancelled, new_run_context, run_pipeline
+from src.orchestrator import RunCancelled, new_run_context, run_diff_pipeline, run_pipeline
 from src.web import log_tee
 
 
@@ -96,6 +96,7 @@ class RunManager:
         auto_approve: bool = False,
         resume: bool = False,
         run_id: str | None = None,
+        diff: tuple[str, str] | None = None,
     ) -> str:
         status = RunStatus(
             run_id="",  # filled below
@@ -130,7 +131,10 @@ class RunManager:
             log_tee.set_buffer(status.log_buffer)
             set_run_id(ctx.run_id)
             try:
-                run_pipeline(ctx, stop_after=stop_after, resume=resume)
+                if diff is not None:
+                    run_diff_pipeline(ctx, base_ref=diff[0], head_ref=diff[1], stop_after=stop_after)
+                else:
+                    run_pipeline(ctx, stop_after=stop_after, resume=resume)
                 if cancel_event.is_set():
                     status.current_stage = "aborted"
                 elif status.current_stage not in ("error", "aborted"):
