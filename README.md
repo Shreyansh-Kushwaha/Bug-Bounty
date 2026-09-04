@@ -297,13 +297,26 @@ python -m src.main audit verify                               # check the audit 
 
 ## Web UI
 
-`src/web/app.py` (FastAPI) exposes the same pipeline over HTTP: start/poll
-runs, answer HITL gates from the browser, download PDF/Markdown reports, query
-the dashboard/score/roadmap, and a chat endpoint for asking questions about a
-run. `frontend/` (React + Vite + Tailwind) is the client. A submitted repo URL
-can be **self-attested** through the UI, which appends it to
-`config/targets.json` as an `attested` entry rather than requiring a manual
-allowlist edit — the pipeline still refuses anything not in the allowlist.
+`src/web/app.py` (FastAPI) exposes the same pipeline over HTTP: start/poll/cancel
+runs, resume an errored or aborted run from its last stage, answer HITL gates
+from the browser, stream live progress over Server-Sent Events, download
+PDF/Markdown reports, query the dashboard/score/roadmap, review duplicate
+findings across runs, and a chat endpoint for asking questions about a run.
+`frontend/` (React + Vite + Tailwind) is the client. Diff mode (analyze only
+files changed between two refs) is available from the dashboard as well as the
+CLI.
+
+### Authentication
+
+The API is gated by a **single-operator password**. Set `LOGIN_PASSWORD` in
+`.env`; the UI then requires sign-in and every `/api/*` route needs a valid
+session cookie. If `LOGIN_PASSWORD` is left blank the API is **unauthenticated**
+(fine for localhost-only development) and the server logs a warning at startup.
+Only repos hosted on github.com, gitlab.com, bitbucket.org, or codeberg.org may
+be submitted, and rendered report HTML is sanitized before display.
+
+Web-attested targets are written to the SQLite database (not `config/targets.json`),
+so the static allowlist is never mutated at request time.
 
 ```bash
 # Backend
@@ -313,15 +326,23 @@ allowlist edit — the pipeline still refuses anything not in the allowlist.
 cd frontend && npm install && npm run dev
 ```
 
+### PR security scanning (GitHub Action)
+
+`.github/workflows/pr-security-scan.yml` runs a diff-aware scan on pull requests
+and posts a summary comment. It is opt-in: it no-ops unless a `GEMINI_API_KEY`
+repository secret is set, and the scanned repo must be listed in
+`config/targets.json`. The summary logic lives in `scripts/pr_scan.py`.
+
 ---
 
 ## Configuration
 
 ### `config/targets.json`
 
-Only repositories listed here can be targeted — this is the authorization
-allowlist. Entries added via the web UI's self-attestation flow are tagged
-`"category": "attested"` with the attester's name and a timestamp.
+This is the static seed allowlist targeted by the CLI. The web UI reads it too,
+but repos self-attested through the browser are stored in the SQLite database
+(`attested_targets`) rather than appended here, so the file stays under manual
+control. The API merges both sources when listing authorized targets.
 
 ### `.env`
 
@@ -355,7 +376,9 @@ Each run creates `data/findings/<target>_<timestamp>/`:
 
 | Concern | Mitigation |
 |---------|-----------|
-| Targeting unauthorized repos | `config/targets.json` allowlist; unlisted repos are refused |
+| Targeting unauthorized repos | CLI enforces the `config/targets.json` allowlist; the web API is gated by an operator password and a repo-host allowlist |
+| Unauthenticated web access | Set `LOGIN_PASSWORD`; all `/api/*` routes then require a signed session cookie |
+| Stored XSS in reports | Rendered report HTML is sanitized against a tag/attribute allowlist before display |
 | Weaponized exploits | Exploit agent is system-prompted to write non-destructive, offline-only PoCs; `destructive=true` PoCs are refused before execution |
 | Network exfiltration in PoC | Docker sandbox runs with `--network none` |
 | Host filesystem damage | Sandbox mounts the workdir read-only; `--read-only` rootfs, dropped capabilities |

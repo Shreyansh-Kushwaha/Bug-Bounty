@@ -135,7 +135,7 @@ export default function Home() {
       {/* ===== Feature tiles ===== */}
       <section className="bento">
         <Feature className="col-4" icon={Search}      title="Pattern-driven recon"      body="Semgrep + grep over a clean clone — unsafe sinks surface before the LLM ever sees the file." />
-        <Feature className="col-4" icon={Brain}       title="Three model tiers"          body="Fast · reasoning · coder. Provider failover Gemini → Groq → OpenRouter when quotas bite." />
+        <Feature className="col-4" icon={Brain}       title="Three model tiers"          body="Fast · reasoning · coder. Provider failover Gemini → Anthropic → Groq → OpenRouter when quotas bite." />
         <Feature className="col-4" icon={Shield}      title="Sandboxed PoCs"             body="Docker --network none, read-only roots, capped CPU/RAM/PIDs. Skip cleanly when no Docker." />
         <Feature className="col-4" icon={CheckSquare} title="Human gates"                body="Approve or abort before exploit and before report. Choices live in the audit chain." />
         <Feature className="col-4" icon={Code2}       title="Patch + regression"         body="A unified diff that builds, plus a test that fails before the fix and passes after." />
