@@ -5,7 +5,9 @@ const API_TARGET = process.env.VITE_API_TARGET || "http://127.0.0.1:8000";
 
 export default defineConfig({
   plugins: [react()],
-  base: "/app/",
+  // "/app/" when the backend serves the SPA (single-service); set VITE_BASE=/
+  // for a standalone deploy at the domain root (e.g. Vercel).
+  base: process.env.VITE_BASE || "/app/",
   server: {
     host: "0.0.0.0",
     port: 5173,

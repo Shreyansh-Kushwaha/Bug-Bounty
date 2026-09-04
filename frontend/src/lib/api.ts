@@ -138,17 +138,31 @@ export class AuthError extends Error {
   }
 }
 
+// Base URL for the API. Empty in dev (Vite proxies /api to the backend) and
+// same-origin single-service deploys; set VITE_API_BASE to the backend origin
+// (e.g. https://your-api.onrender.com) when the frontend is hosted separately.
+export const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
+
+/** Prefix an /api path with the configured backend origin. */
+export function apiUrl(path: string): string {
+  return API_BASE + path;
+}
+
 async function jget<T>(path: string): Promise<T> {
-  const r = await fetch(path, { headers: { Accept: "application/json" } });
+  const r = await fetch(apiUrl(path), {
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
   if (r.status === 401) throw new AuthError();
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}: ${path}`);
   return r.json() as Promise<T>;
 }
 
 async function jpost<T>(path: string, body: unknown): Promise<T> {
-  const r = await fetch(path, {
+  const r = await fetch(apiUrl(path), {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
+    credentials: "include",
     body: JSON.stringify(body),
   });
   if (r.status === 401) throw new AuthError();
@@ -200,7 +214,7 @@ export const api = {
     base_ref?: string;
     head_ref?: string;
   }) => jpost<{ run_id: string }>("/api/runs", payload),
-  eventsUrl: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/events`,
+  eventsUrl: (runId: string) => apiUrl(`/api/runs/${encodeURIComponent(runId)}/events`),
   decideGate: (id: string, gate: string, decision: "approve" | "abort") =>
     jpost<{ ok: boolean }>(`/api/runs/${encodeURIComponent(id)}/gate`, { gate, decision }),
   cancelRun: (id: string) => jpost<{ ok: boolean }>(`/api/runs/${encodeURIComponent(id)}/cancel`, {}),
@@ -211,7 +225,7 @@ export const api = {
   chat: (question: string, runId?: string | null) =>
     jpost<ChatResponse>("/api/chat", { question, run_id: runId || undefined }),
   reportPdfUrl: (runId: string) =>
-    `/api/runs/${encodeURIComponent(runId)}/report.pdf`,
+    apiUrl(`/api/runs/${encodeURIComponent(runId)}/report.pdf`),
 };
 
 export function fmtUtc(ts: number | null | undefined): string {

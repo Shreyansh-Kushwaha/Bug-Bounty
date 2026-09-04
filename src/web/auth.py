@@ -107,5 +107,22 @@ def check_password(candidate: str) -> bool:
     return hmac.compare_digest((candidate or "").strip(), pw)
 
 
+def cookie_samesite() -> str:
+    """Cookie SameSite policy. Use 'none' for a cross-site frontend (e.g. the
+    SPA on Vercel calling the API on Render); browsers then also require Secure.
+    """
+    v = os.getenv("COOKIE_SAMESITE", "lax").strip().lower()
+    return v if v in ("lax", "strict", "none") else "lax"
+
+
 def cookie_secure() -> bool:
+    # SameSite=None is only honored on Secure cookies, so force it on.
+    if cookie_samesite() == "none":
+        return True
     return os.getenv("COOKIE_SECURE", "0").strip() in ("1", "true", "True")
+
+
+def allowed_origins() -> list[str]:
+    """Extra CORS origins (comma-separated) for a cross-origin frontend."""
+    raw = os.getenv("ALLOWED_ORIGINS", "").strip()
+    return [o.strip() for o in raw.split(",") if o.strip()]

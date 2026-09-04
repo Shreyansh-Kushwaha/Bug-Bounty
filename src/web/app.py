@@ -69,6 +69,10 @@ async def _require_auth(request: Request, call_next):
 # Tighten origins in production if you put this behind a domain.
 app.add_middleware(
     CORSMiddleware,
+    # Local dev origins (Vite) plus any cross-origin frontend from ALLOWED_ORIGINS
+    # (e.g. the Vercel deployment URL). Credentials are allowed so the session
+    # cookie is sent cross-site.
+    allow_origins=auth.allowed_origins(),
     allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_credentials=True,
     allow_methods=["*"],
@@ -302,7 +306,7 @@ def api_login(payload: dict):
     resp = JSONResponse({"ok": True, "name": auth.operator_name()})
     resp.set_cookie(
         auth.COOKIE_NAME, auth.mint_token(),
-        httponly=True, samesite="lax", secure=auth.cookie_secure(),
+        httponly=True, samesite=auth.cookie_samesite(), secure=auth.cookie_secure(),
         max_age=7 * 24 * 3600, path="/",
     )
     return resp

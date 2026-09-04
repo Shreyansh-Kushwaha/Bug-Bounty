@@ -1,0 +1,25 @@
+# Slim dependency set for hosted web deploys (e.g. Render free tier, 512 MB).
+# Drops semgrep + tree-sitter (heavy; semgrep is optional and invoked as a
+# subprocess, tree-sitter is unused) and dev/test tooling. The pipeline runs
+# fine without Semgrep — the recon pass simply skips it.
+
+# Core
+pydantic>=2.9.0
+python-dotenv>=1.0.0
+rich>=13.9.0
+gitpython>=3.1.0
+
+# LLM providers (imports are lazy; install all so any key works)
+google-genai>=1.0.0
+groq>=0.11.0
+openai>=1.50.0
+anthropic>=0.39.0
+json-repair>=0.30.0
+
+# Web backend + PDF/report rendering
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+jinja2>=3.1.0
+python-multipart>=0.0.12
+markdown>=3.7
+fpdf2>=2.8

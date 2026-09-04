@@ -50,7 +50,7 @@ export function useRunStream(runId: string) {
 
     if (typeof EventSource !== "undefined") {
       try {
-        es = new EventSource(api.eventsUrl(runId));
+        es = new EventSource(api.eventsUrl(runId), { withCredentials: true });
         es.onmessage = (ev) => {
           if (closed) return;
           try {
