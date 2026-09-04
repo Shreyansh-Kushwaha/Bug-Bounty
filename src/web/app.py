@@ -17,11 +17,13 @@ from dataclasses import asdict
 from pathlib import Path
 
 import markdown as md
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from src.web import auth
+from src.web.sanitize import host_allowed as _host_allowed, sanitize_html as _sanitize_html
 from src.chat import ask as chat_ask
 from src.models.router import MODEL_DAILY_LIMITS
 from src.pdf_report import render_full_report_pdf, render_markdown_to_pdf
@@ -40,6 +42,28 @@ DB_PATH = ROOT / "data" / "findings.db"
 WEB_DIR = Path(__file__).parent
 
 app = FastAPI(title="Bug-Bounty Pipeline")
+
+if not auth.auth_enabled():
+    import logging
+    logging.getLogger("uvicorn.error").warning(
+        "LOGIN_PASSWORD is not set - the web API is UNAUTHENTICATED. "
+        "Set LOGIN_PASSWORD in .env before exposing this on a network."
+    )
+
+
+@app.middleware("http")
+async def _require_auth(request: Request, call_next):
+    """Gate every /api/* route behind a valid session when auth is enabled."""
+    path = request.url.path
+    if (
+        auth.auth_enabled()
+        and path.startswith("/api/")
+        and path not in auth.PUBLIC_API_PATHS
+        and request.method != "OPTIONS"
+    ):
+        if not auth.verify_token(request.cookies.get(auth.COOKIE_NAME)):
+            return JSONResponse({"detail": "Authentication required"}, status_code=401)
+    return await call_next(request)
 
 # Permissive CORS for the Vite dev server (and any local React dev origin).
 # Tighten origins in production if you put this behind a domain.
@@ -232,6 +256,48 @@ def api_health():
     return {"ok": True}
 
 
+# ---------- Authentication ----------
+
+def _validate_run_id(run_id: str) -> str:
+    if "/" in run_id or ".." in run_id or "\\" in run_id:
+        raise HTTPException(400, "Bad run_id")
+    return run_id
+
+
+@app.get("/api/me")
+def api_me(request: Request):
+    authed = (not auth.auth_enabled()) or auth.verify_token(
+        request.cookies.get(auth.COOKIE_NAME)
+    )
+    return {
+        "authenticated": bool(authed),
+        "auth_enabled": auth.auth_enabled(),
+        "name": auth.operator_name() if authed else None,
+    }
+
+
+@app.post("/api/login")
+def api_login(payload: dict):
+    if not auth.auth_enabled():
+        return {"ok": True, "auth_enabled": False}
+    if not auth.check_password(str(payload.get("password", ""))):
+        raise HTTPException(401, "Incorrect password")
+    resp = JSONResponse({"ok": True, "name": auth.operator_name()})
+    resp.set_cookie(
+        auth.COOKIE_NAME, auth.mint_token(),
+        httponly=True, samesite="lax", secure=auth.cookie_secure(),
+        max_age=7 * 24 * 3600, path="/",
+    )
+    return resp
+
+
+@app.post("/api/logout")
+def api_logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(auth.COOKIE_NAME, path="/")
+    return resp
+
+
 # ---------- SPA fallback for the React app ----------
 @app.get("/app", include_in_schema=False)
 @app.get("/app/", include_in_schema=False)
@@ -280,6 +346,11 @@ def api_create_run(payload: dict):
 
     if not repo_url or not re.match(r"^https?://", repo_url):
         raise HTTPException(400, "Repo URL must start with http(s)://")
+    if not _host_allowed(repo_url):
+        raise HTTPException(
+            400,
+            "Repo host not allowed. Use github.com, gitlab.com, bitbucket.org, or codeberg.org.",
+        )
     if not attested:
         raise HTTPException(400, "Attestation required")
 
@@ -314,6 +385,7 @@ def api_create_run(payload: dict):
 
 @app.get("/api/runs/{run_id}")
 def api_run_detail(run_id: str):
+    _validate_run_id(run_id)
     status = manager.get(run_id)
     if status is None:
         raise HTTPException(404, "Unknown run")
@@ -332,6 +404,7 @@ def api_run_detail(run_id: str):
 
 @app.post("/api/runs/{run_id}/gate")
 def api_gate(run_id: str, payload: dict):
+    _validate_run_id(run_id)
     gate = (payload.get("gate") or "").strip()
     decision = (payload.get("decision") or "").strip()
     if decision not in ("approve", "abort"):
@@ -344,6 +417,7 @@ def api_gate(run_id: str, payload: dict):
 
 @app.get("/api/runs/{run_id}/artifact/{name}")
 def api_artifact(run_id: str, name: str):
+    _validate_run_id(run_id)
     if "/" in name or ".." in name or "\\" in name:
         raise HTTPException(400, "Bad artifact name")
     path = FINDINGS_DIR / run_id / name
@@ -356,7 +430,8 @@ def api_artifact(run_id: str, name: str):
     if kind in ("report_md", "eli5_md"):
         raw = path.read_text(errors="replace")
         out["raw"] = raw
-        out["html"] = md.markdown(raw, extensions=["fenced_code", "tables", "toc", "sane_lists"])
+        rendered = md.markdown(raw, extensions=["fenced_code", "tables", "toc", "sane_lists"])
+        out["html"] = _sanitize_html(rendered)
         return out
 
     try:
@@ -382,6 +457,7 @@ def api_run_report_pdf(run_id: str):
     severity gauge, pipeline diagram, score chart, remediation checklist).
     Falls back to typesetting 05_report_*.md if only that exists.
     """
+    _validate_run_id(run_id)
     run_dir = FINDINGS_DIR / run_id
     if not run_dir.is_dir():
         raise HTTPException(404, "Unknown run")
@@ -430,6 +506,7 @@ def api_score_overview(run_id: str | None = None):
     (06_score.json). Without, computes a quick all-time score from the
     findings DB so the dashboard always has something to show."""
     if run_id:
+        _validate_run_id(run_id)
         path = FINDINGS_DIR / run_id / "06_score.json"
         if not path.exists():
             raise HTTPException(404, "No score for that run yet")

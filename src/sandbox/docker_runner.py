@@ -6,7 +6,7 @@ Safety defaults:
   - CPU and memory limited
   - no access to host volumes except the mounted workdir (read-only)
   - strict timeout
-  - non-root user inside container when image allows
+  - runs as an unprivileged UID (nobody) for PoC execution
 
 If Docker is not installed or the daemon isn't reachable, run() returns a
 SandboxResult with executed=False and a clear reason. The pipeline still
@@ -110,6 +110,10 @@ def run_poc(
             "--pids-limit", "128",
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges",
+            # Drop to an unprivileged UID/GID (nobody). The rootfs is read-only
+            # and /work is mounted read-only, so the PoC can only write to the
+            # tmpfs at /tmp.
+            "--user", "65534:65534",
             "-v", f"{workdir}:/work:ro",
             "-w", "/work",
             image,

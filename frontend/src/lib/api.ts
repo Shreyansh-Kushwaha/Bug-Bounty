@@ -118,8 +118,23 @@ export type ChatResponse = {
   } | null;
 };
 
+export type MeResponse = {
+  authenticated: boolean;
+  auth_enabled: boolean;
+  name: string | null;
+};
+
+/** Thrown on a 401 so callers can route to the login screen. */
+export class AuthError extends Error {
+  constructor() {
+    super("Authentication required");
+    this.name = "AuthError";
+  }
+}
+
 async function jget<T>(path: string): Promise<T> {
   const r = await fetch(path, { headers: { Accept: "application/json" } });
+  if (r.status === 401) throw new AuthError();
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}: ${path}`);
   return r.json() as Promise<T>;
 }
@@ -130,6 +145,7 @@ async function jpost<T>(path: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(body),
   });
+  if (r.status === 401) throw new AuthError();
   if (!r.ok) {
     let detail = `${r.status} ${r.statusText}`;
     try {
@@ -142,6 +158,9 @@ async function jpost<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const api = {
+  me: () => jget<MeResponse>("/api/me"),
+  login: (password: string) => jpost<{ ok: boolean; name?: string; auth_enabled?: boolean }>("/api/login", { password }),
+  logout: () => jpost<{ ok: boolean }>("/api/logout", {}),
   targets: () => jget<{ targets: Target[] }>("/api/targets"),
   quota:   () => jget<{ quota: QuotaRow[] }>("/api/quota"),
   runs:    (limit = 20) => jget<{ runs: RunStatus[] }>(`/api/runs?limit=${limit}`),

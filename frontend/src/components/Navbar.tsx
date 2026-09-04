@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { NavLink, Link } from "react-router-dom";
-import { Menu, Shield, X } from "lucide-react";
+import { LogOut, Menu, Shield, X } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
+import { useAuth } from "../hooks/useAuth";
 
 const links = [
   { to: "/", label: "Home", end: true },
@@ -16,6 +17,7 @@ const links = [
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
+  const { authEnabled, authed, name, logout } = useAuth();
 
   return (
     <header className="sticky top-0 z-50 bg-bg-elev/90 backdrop-blur-md border-b border-border">
@@ -45,6 +47,15 @@ export default function Navbar() {
         </nav>
 
         <div className="flex items-center gap-2">
+          {authEnabled && authed && (
+            <button
+              onClick={() => logout()}
+              title={name ? `Sign out ${name}` : "Sign out"}
+              className="hidden md:inline-flex items-center gap-1.5 text-sm px-2.5 py-1.5 rounded-lg border border-border text-fg-muted hover:bg-bg-soft hover:text-fg"
+            >
+              <LogOut size={14} /> Sign out
+            </button>
+          )}
           <ThemeToggle />
           <button
             onClick={() => setOpen((o) => !o)}
