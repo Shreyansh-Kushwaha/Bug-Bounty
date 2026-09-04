@@ -33,6 +33,8 @@ export default function ScoreCard({ runId, compact = false }: Props) {
     <div className={`grid gap-3 ${compact ? "" : "sm:grid-cols-[auto,1fr]"} items-start`}>
       <div className="flex items-center gap-4">
         <div
+          role="img"
+          aria-label={`Overall security score ${score.overall} out of 100, grade ${score.grade}, ${score.risk_band} risk`}
           className="rounded-full flex items-center justify-center font-semibold tabular-nums"
           style={{
             width: compact ? 56 : 80,
@@ -61,26 +63,36 @@ export default function ScoreCard({ runId, compact = false }: Props) {
       </div>
 
       <div className="grid gap-1.5">
-        {score.categories.map((c) => (
-          <div key={c.name} className="flex items-center gap-3 text-sm">
-            <div className="w-32 capitalize text-fg-muted">{c.name}</div>
-            <div className="flex-1 h-1.5 rounded-full bg-bg-soft overflow-hidden">
-              <span
-                className="block h-full"
-                style={{
-                  width: `${c.score}%`,
-                  background:
-                    c.score >= 80 ? "var(--ok)" :
-                    c.score >= 60 ? "var(--warn)" : "var(--bad)",
-                }}
-              />
+        {score.categories.map((c) => {
+          const band = c.score >= 80 ? "safe" : c.score >= 60 ? "medium" : "high";
+          return (
+            <div key={c.name} className="flex items-center gap-3 text-sm">
+              <div className="w-32 capitalize text-fg-muted">{c.name}</div>
+              <div
+                className="flex-1 h-1.5 rounded-full bg-bg-soft overflow-hidden"
+                role="meter"
+                aria-valuenow={c.score}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={`${c.name}: ${c.score} of 100, ${band} risk, ${c.issues} issue${c.issues === 1 ? "" : "s"}`}
+              >
+                <span
+                  className="block h-full"
+                  style={{
+                    width: `${c.score}%`,
+                    background:
+                      c.score >= 80 ? "var(--ok)" :
+                      c.score >= 60 ? "var(--warn)" : "var(--bad)",
+                  }}
+                />
+              </div>
+              <div className="w-10 tabular-nums text-right text-fg-muted">{c.score}</div>
+              <div className="w-16 text-xs text-fg-dim text-right capitalize">
+                {c.issues > 0 ? `${band} risk` : "clean"}
+              </div>
             </div>
-            <div className="w-10 tabular-nums text-right text-fg-muted">{c.score}</div>
-            <div className="w-14 text-xs text-fg-dim text-right">
-              {c.issues > 0 ? `${c.issues} issue${c.issues === 1 ? "" : "s"}` : "clean"}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

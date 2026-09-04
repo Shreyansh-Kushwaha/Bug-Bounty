@@ -78,7 +78,7 @@ export default function RunDetail() {
         {status.stop_after && <div><strong className="text-fg">Stop after:</strong> {status.stop_after}</div>}
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap mb-4 text-sm">
+      <div className="flex items-center gap-2 flex-wrap mb-4 text-sm" role="status" aria-live="polite">
         <strong>Status:</strong>
         <StageChip stage={status.current_stage} />
         {status.auto_approve && <span className="pill">auto-approve</span>}
@@ -108,6 +108,7 @@ export default function RunDetail() {
 
       {status.pending_gate && (
         <div
+          role="alert"
           className="rounded-xl p-5 mb-4 border shadow-soft"
           style={{
             background: "linear-gradient(135deg, var(--warn-soft), color-mix(in srgb, var(--warn-soft) 60%, transparent))",
